@@ -55,6 +55,6 @@ const tick = async () => {
   finally { if (!stopped) timer = setTimeout(() => { activeTick = tick(); }, 1000); }
 };
 await app.listen({ host: '127.0.0.1', port }); activeTick = tick();
-console.info(`LOCAL FIXTURE DEMO: http://localhost:${port}/auth/demo — actual PocketBase storage; no Discord connection or real messages.`);
+console.info(`LOCAL FIXTURE DEMO: http://localhost:${port}/auth/demo: actual PocketBase storage; no Discord connection or real messages.`);
 let closing = false;
 for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => { if (closing) return; closing = true; stopped = true; if (timer) clearTimeout(timer); void (async () => { await app.close(); await activeTick; await host.stop(); try { await release(); await db.close(); } finally { await pb.stop(); } })(); });

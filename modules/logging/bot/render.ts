@@ -15,7 +15,7 @@ export function renderEvent(event: LogEvent, marker: string, accentColor: string
       fields: [
         { name: 'Before', value: values(event.before), inline: true },
         { name: 'After', value: values(event.after), inline: true },
-        { name: 'Attribution', value: event.actorId ? `Actor ID: ${event.actorId}` : 'Actor unknown — no confirmed audit evidence', inline: false },
+        { name: 'Attribution', value: event.actorId ? `Actor ID: ${event.actorId}` : 'Actor unknown. No confirmed audit evidence.', inline: false },
         { name: 'Reason', value: escapeText(clip(event.reason ?? 'No reason recorded', 500)), inline: false }
       ], timestamp: event.observedAt, footer: { text: `Observed time · ${marker}` }
     }]

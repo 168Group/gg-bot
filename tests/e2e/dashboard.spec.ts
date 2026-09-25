@@ -23,7 +23,7 @@ test('staff can inspect fixtures, save routing, preview and run a delivery test'
   await page.getByLabel('Event type').selectOption('logging.test');
   await expect(page.getByRole('link', { name: /Delivery test/ }).first()).toBeVisible();
   await page.getByRole('link', { name: /Delivery test/ }).first().click();
-  await expect(page.getByText('Unknown — no confirmed audit evidence', { exact: true })).toBeVisible();
+  await expect(page.getByText('Unknown. No confirmed audit evidence.', { exact: true })).toBeVisible();
   expect(errors).toEqual([]);
 });
 test('anonymous users see sign-in and protected APIs reject access', async ({ page, request }) => {
