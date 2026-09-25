@@ -1,0 +1,4 @@
+[
+  { "id": "logging", "developmentOnly": false },
+  { "id": "example", "developmentOnly": true }
+]

@@ -1,0 +1,59 @@
+# Uses an existing PocketHost instance. Run from the repository root with --env-file .env.
+name: omo-bot
+services:
+  bot:
+    build: { context: .., dockerfile: infra/Dockerfile }
+    command: [node, dist/bot/main.js]
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      STORAGE_PROVIDER: pocketbase
+      POCKETBASE_URL: ${POCKETBASE_URL:?Set POCKETBASE_URL}
+      POCKETBASE_SERVICE_KEY: ${POCKETBASE_SERVICE_KEY:?Set POCKETBASE_SERVICE_KEY}
+      DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:?Set DISCORD_GUILD_ID}
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:?Set DISCORD_BOT_TOKEN}
+      DASHBOARD_ORIGIN: ${DASHBOARD_ORIGIN:?Set DASHBOARD_ORIGIN}
+      OWNER_USER_IDS: ${OWNER_USER_IDS:?Set OWNER_USER_IDS}
+      DASHBOARD_ADMIN_ROLE_IDS: ${DASHBOARD_ADMIN_ROLE_IDS:-}
+      DASHBOARD_VIEWER_ROLE_IDS: ${DASHBOARD_VIEWER_ROLE_IDS:-}
+      BOT_NAME: ${BOT_NAME:-OMO Bot}
+      COMMUNITY_NAME: ${COMMUNITY_NAME:-GottaGacha}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3001/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  web:
+    build: { context: .., dockerfile: infra/Dockerfile }
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      WEB_HOST: 0.0.0.0
+      STORAGE_PROVIDER: pocketbase
+      POCKETBASE_URL: ${POCKETBASE_URL:?Set POCKETBASE_URL}
+      POCKETBASE_SERVICE_KEY: ${POCKETBASE_SERVICE_KEY:?Set POCKETBASE_SERVICE_KEY}
+      DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:?Set DISCORD_GUILD_ID}
+      DISCORD_APPLICATION_ID: ${DISCORD_APPLICATION_ID:?Set DISCORD_APPLICATION_ID}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:?Set DISCORD_CLIENT_SECRET}
+      SESSION_ENCRYPTION_KEY: ${SESSION_ENCRYPTION_KEY:?Set SESSION_ENCRYPTION_KEY}
+      DASHBOARD_ORIGIN: ${DASHBOARD_ORIGIN:?Set DASHBOARD_ORIGIN}
+      OWNER_USER_IDS: ${OWNER_USER_IDS:?Set OWNER_USER_IDS}
+      DASHBOARD_ADMIN_ROLE_IDS: ${DASHBOARD_ADMIN_ROLE_IDS:-}
+      DASHBOARD_VIEWER_ROLE_IDS: ${DASHBOARD_VIEWER_ROLE_IDS:-}
+      BOT_NAME: ${BOT_NAME:-OMO Bot}
+      COMMUNITY_NAME: ${COMMUNITY_NAME:-GottaGacha}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  proxy:
+    image: caddy:2.11-alpine
+    restart: unless-stopped
+    environment: { DASHBOARD_DOMAIN: '${DASHBOARD_DOMAIN:?Set DASHBOARD_DOMAIN}' }
+    ports: ['80:80', '443:443']
+    volumes: ['./Caddyfile:/etc/caddy/Caddyfile:ro', 'caddy_data:/data', 'caddy_config:/config']
+    depends_on: [web]
+volumes:
+  caddy_data:
+  caddy_config:

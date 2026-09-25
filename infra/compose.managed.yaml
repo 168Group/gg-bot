@@ -1,0 +1,29 @@
+name: omo-bot-managed
+services:
+  web:
+    build: { context: '..', dockerfile: infra/Dockerfile }
+    command: [node, dist/setup/main.js]
+    environment:
+      NODE_ENV: production
+      SETUP_HOST: 0.0.0.0
+      SETUP_ORIGIN: ${DASHBOARD_ORIGIN:?Set DASHBOARD_ORIGIN to your HTTPS origin}
+      SETUP_DATA_DIR: /app/.local/installation
+    volumes: [installation:/app/.local]
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  proxy:
+    image: caddy:2.11-alpine
+    environment:
+      DASHBOARD_DOMAIN: ${DASHBOARD_DOMAIN:?Set DASHBOARD_DOMAIN}
+    ports: ["80:80", "443:443"]
+    volumes: ["./Caddyfile:/etc/caddy/Caddyfile:ro", "caddy_data:/data", "caddy_config:/config"]
+    depends_on: [web]
+    restart: unless-stopped
+volumes:
+  installation:
+  caddy_data:
+  caddy_config:

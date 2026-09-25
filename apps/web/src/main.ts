@@ -1,0 +1,11 @@
+import { openStorage } from '../../../packages/db/src/factory.js';
+import { readConfig, requireSecret } from '../../../packages/core/src/config.js';
+import { discordIdentity } from './auth.js';
+import { createServer } from './server.js';
+const config = readConfig();
+const db = openStorage(config);
+const clientId = requireSecret('DISCORD_APPLICATION_ID');
+const { app } = await createServer({ config, db, clientId, encryptionKey: requireSecret('SESSION_ENCRYPTION_KEY'), identity: discordIdentity(config, clientId, requireSecret('DISCORD_CLIENT_SECRET')) });
+await app.listen({ host: process.env.WEB_HOST ?? '127.0.0.1', port: config.WEB_PORT });
+console.info(`Dashboard API listening on port ${config.WEB_PORT}.`);
+for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => { void (async () => { await app.close(); await db.close(); })(); });

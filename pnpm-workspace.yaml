@@ -1,0 +1,10 @@
+packages:
+  - apps/*
+  - packages/*
+  - modules/*
+onlyBuiltDependencies:
+  - esbuild
+  - '@embedded-postgres/darwin-arm64'
+  - '@embedded-postgres/darwin-x64'
+  - '@embedded-postgres/linux-x64'
+  - '@embedded-postgres/linux-arm64'

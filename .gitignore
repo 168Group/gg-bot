@@ -1,0 +1,16 @@
+node_modules/
+.pnpm-store/
+dist/
+.env
+.env.*
+!.env.example
+.local/
+coverage/
+test-results/
+playwright-report/
+*.log
+.DS_Store
+
+# Private implementation planning retained locally, outside public source.
+GOTTAGACHA_BOT_BUILD_PLAN.md
+docs/plans/

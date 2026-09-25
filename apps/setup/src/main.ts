@@ -1,0 +1,13 @@
+import { InstallationStore } from './state.js';
+import { createSetupServer } from './server.js';
+const port = Number(process.env.SETUP_PORT ?? 3000), host = process.env.SETUP_HOST ?? '127.0.0.1';
+const origin = process.env.SETUP_ORIGIN ?? `http://localhost:${port}`;
+if (!Number.isInteger(port) || port < 1 || port > 65535 || new URL(origin).origin !== origin) throw new Error('Invalid setup port or origin.');
+if (!['127.0.0.1', '::1', 'localhost'].includes(host) && !origin.startsWith('https://')) throw new Error('Remote setup requires an explicit HTTPS SETUP_ORIGIN.');
+const store = await InstallationStore.open(process.env.SETUP_DATA_DIR ?? '.local/installation');
+const { app, resume } = await createSetupServer(store, origin);
+await app.listen({ host, port });
+console.info(`Installation console: ${origin}/setup`);
+console.info(`Installation access key: ${store.accessKey}`);
+await resume();
+for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => { void app.close(); });
