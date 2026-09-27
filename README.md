@@ -66,7 +66,7 @@ pnpm test:e2e
 
 Integration tests start isolated actual PostgreSQL/PocketBase processes on loopback. They do not use your remote Docker host or production database. `pnpm pocketbase:install` is required first. Browser tests build the fixture frontend into `dist/dashboard-demo`, start a PocketBase fixture console on port 3100 with storage on 8092, and run a separate setup manager on 3200. Production frontend output remains in `dist/dashboard`.
 
-For a production build use `pnpm build`, not `build:demo`. Docker Compose templates exist for [PocketHost](infra/compose.pockethost.yaml) and [PostgreSQL](infra/compose.yaml); image deployment and live Discord verification are not yet certified. Exact verification status is in [docs/VERIFICATION.md](docs/VERIFICATION.md).
+For a production build use `pnpm build`, not `build:demo`. Docker Compose templates exist for [PocketHost](infra/compose.pockethost.yaml) and [PostgreSQL](infra/compose.yaml), and [Railway](docs/RAILWAY.md) has a per-service guide with its config files in `infra/`; image deployment and live Discord verification are not yet certified. Exact verification status is in [docs/VERIFICATION.md](docs/VERIFICATION.md).
 
 ## License and hosting
 

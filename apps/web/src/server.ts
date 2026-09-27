@@ -19,7 +19,8 @@ export interface ServerOptions { config: Config; db: StorageDriver; encryptionKe
 export async function createServer(options: ServerOptions) {
   const { config, db } = options;
   // Request URLs can contain OAuth codes. Never enable automatic request logging.
-  const app = Fastify({ logger: false, bodyLimit: 65536, requestTimeout: 15000, trustProxy: false });
+  // Set WEB_TRUST_PROXY=1 only when every request arrives through a trusted reverse proxy (Railway, Caddy). It lets rate limits key on the visitor's IP instead of the proxy's.
+  const app = Fastify({ logger: false, bodyLimit: 65536, requestTimeout: 15000, trustProxy: process.env.WEB_TRUST_PROXY === '1' });
   await app.register(cookie);
   await app.register(helmet, { contentSecurityPolicy: { directives: {
     defaultSrc: ["'self'"], scriptSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'"], imgSrc: ["'self'", 'data:'],
