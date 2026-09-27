@@ -138,7 +138,33 @@ Why each non-obvious value is what it is:
 
 ### PocketHost instead of the pocketbase service
 
-Skip the pocketbase service. Follow [POCKETHOST.md](POCKETHOST.md) to upload the hook bundle over SFTP, set `OMO_STORAGE_KEY` and `OMO_GUILD_ID` in the instance's Secrets and restart it. Then set `POCKETBASE_URL` on web and bot to the instance's `https://` origin, preferably its permanent UUID hostname. Every other variable is unchanged.
+Skip the pocketbase service and run only web and bot on Railway. The instance must carry this repository's hook and migration bundle; a plain PocketHost instance has neither, and every storage call then fails with `PocketBase storage access failed`. No superuser is involved: the bundle adds a custom route that the storage key authenticates.
+
+1. In PocketHost, create a dedicated instance and pin its PocketBase version to `0.40.4`, the version the repository's contract tests run against.
+2. Under **Account → Keys**, register an Ed25519 public key scoped to that instance.
+3. Locally, run `pnpm install --frozen-lockfile` and `pnpm pocketbase:bundle`. The bundle lands in `dist/pockethost/pb_hooks` and `dist/pockethost/pb_migrations`.
+4. Connect over SFTP to `ftp.pockethost.io`, port `2222`, username your PocketHost account email, with that key. Open the folder named after the instance and upload the four files into its `pb_hooks` and the three files into its `pb_migrations`, keeping the layout flat. `sftp -P 2222 -i ~/.ssh/<key> <account email>@ftp.pockethost.io` works from a terminal.
+5. In the instance's **Secrets**, add `OMO_STORAGE_KEY` (the storage key) and `OMO_GUILD_ID` (the server ID).
+6. Restart the instance from the PocketHost dashboard so the migrations apply and the hooks load.
+7. Set `POCKETBASE_URL` on web and bot to the instance's `https://` origin, preferably its permanent UUID hostname, and `POCKETBASE_SERVICE_KEY` to the storage key. Every other variable is unchanged.
+
+Verify from your own machine before deploying the app services:
+
+```sh
+curl -s -w "\nHTTP %{http_code}\n" -X POST https://<instance>.pockethost.io/api/omo/v1/ready \
+  -H 'Content-Type: application/json' -H 'X-OMO-Storage-Key: <storage key>' \
+  -d '{"guildId":"<server id>","input":{}}'
+```
+
+| Response | Cause |
+| --- | --- |
+| `{"data":{"protocol":1}}` | Storage is ready. |
+| 404 "The requested resource wasn't found." | The hook bundle is not loaded. Check the upload paths and restart the instance. |
+| 503 "Storage service is not configured." | `OMO_STORAGE_KEY` or `OMO_GUILD_ID` is missing from Secrets, or the instance has not restarted since they were added. |
+| 401 "Storage access denied." | The Secret differs from `POCKETBASE_SERVICE_KEY`. |
+| 403 "This storage instance belongs to another server." | `OMO_GUILD_ID` differs from `DISCORD_GUILD_ID`. |
+
+The same check works against a Railway-hosted pocketbase service. The application logs print the same generic message for all four failures, so use the curl response to tell them apart.
 
 ### PostgreSQL instead of PocketBase
 
