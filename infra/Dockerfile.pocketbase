@@ -1,0 +1,22 @@
+# PocketBase storage service with the OMOBot hook and migration bundle baked in.
+# Build context is the repository root (Railway default). Mount a persistent volume at /pb_data.
+FROM alpine:3.21 AS download
+ARG POCKETBASE_VERSION=0.40.4
+ARG POCKETBASE_ARCH=amd64
+RUN apk add --no-cache ca-certificates unzip wget
+WORKDIR /download
+RUN wget -q "https://github.com/pocketbase/pocketbase/releases/download/v${POCKETBASE_VERSION}/pocketbase_${POCKETBASE_VERSION}_linux_${POCKETBASE_ARCH}.zip" \
+ && wget -q "https://github.com/pocketbase/pocketbase/releases/download/v${POCKETBASE_VERSION}/checksums.txt" \
+ && grep " pocketbase_${POCKETBASE_VERSION}_linux_${POCKETBASE_ARCH}.zip$" checksums.txt | sha256sum -c - \
+ && unzip -q "pocketbase_${POCKETBASE_VERSION}_linux_${POCKETBASE_ARCH}.zip" pocketbase
+
+FROM alpine:3.21
+RUN apk add --no-cache ca-certificates
+COPY --from=download /download/pocketbase /usr/local/bin/pocketbase
+COPY infra/pocketbase/pb_hooks /pb/pb_hooks
+COPY infra/pocketbase/pb_migrations /pb/pb_migrations
+RUN mkdir -p /pb_data
+ENV PORT=8090
+EXPOSE 8090
+# Committed migrations apply on startup. The headless hook keeps the installer closed; OMO_STORAGE_KEY and OMO_GUILD_ID bind the instance.
+CMD pocketbase serve --http="0.0.0.0:${PORT}" --dir=/pb_data --hooksDir=/pb/pb_hooks --migrationsDir=/pb/pb_migrations --hooksWatch=false

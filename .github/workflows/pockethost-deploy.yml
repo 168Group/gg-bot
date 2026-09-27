@@ -1,0 +1,45 @@
+name: Deploy PocketHost bundle
+# Uploads infra/pocketbase hooks and migrations to a PocketHost instance over SFTP.
+# Runs on demand from the Actions tab, and automatically when the bundle changes on main.
+# Secrets: POCKETHOST_SSH_KEY (Ed25519 private key registered under Account → Keys, scoped to the instance),
+#          POCKETHOST_EMAIL (account email, the SFTP username), POCKETHOST_INSTANCE (instance name, the SFTP folder).
+# Restart the instance from the PocketHost dashboard afterwards so new migrations apply.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['infra/pocketbase/**', '.github/workflows/pockethost-deploy.yml']
+permissions:
+  contents: read
+concurrency: pockethost-deploy
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH key and host key
+        env:
+          SSH_KEY: ${{ secrets.POCKETHOST_SSH_KEY }}
+        run: |
+          test -n "$SSH_KEY" || { echo "Set the POCKETHOST_SSH_KEY secret."; exit 1; }
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/pockethost && chmod 600 ~/.ssh/pockethost
+          ssh-keyscan -p 2222 ftp.pockethost.io >> ~/.ssh/known_hosts 2>/dev/null
+      - name: Upload hooks and migrations
+        env:
+          PH_USER: ${{ secrets.POCKETHOST_EMAIL }}
+          PH_INSTANCE: ${{ secrets.POCKETHOST_INSTANCE }}
+        run: |
+          test -n "$PH_USER" -a -n "$PH_INSTANCE" || { echo "Set the POCKETHOST_EMAIL and POCKETHOST_INSTANCE secrets."; exit 1; }
+          cd infra/pocketbase
+          sftp -P 2222 -i ~/.ssh/pockethost -o BatchMode=yes -b - "$PH_USER@ftp.pockethost.io" <<SFTP
+          cd $PH_INSTANCE
+          -mkdir pb_hooks
+          -mkdir pb_migrations
+          put pb_hooks/*.js pb_hooks/
+          put pb_migrations/*.js pb_migrations/
+          ls -l pb_hooks
+          ls -l pb_migrations
+          bye
+          SFTP
+          echo "Bundle uploaded. Restart the instance from the PocketHost dashboard to apply migrations."
