@@ -6,20 +6,35 @@ import { createServer } from 'node:http';
 import { Client, Events, MessageFlags, PermissionFlagsBits, type GuildChannel } from 'discord.js';
 import { openStorage } from '../../../packages/db/src/factory.js';
 import type { Config } from '../../../packages/core/src/config.js';
-import { accessFor } from '../../../packages/core/src/access.js';
+import { accessFor, HttpError } from '../../../packages/core/src/access.js';
 import { ModuleHost } from '../../../packages/core/src/host.js';
 import { LoggingRepository } from '../../../modules/logging/bot/repository.js';
 import { DeliveryWorker } from '../../../modules/logging/bot/delivery.js';
 import { botRegistry } from '../../../registry/bot.js';
 import { channelData, discordTransport, destinationPermissions } from './discord.js';
 
-export async function startBot(config: Config, token: string, leaseWaitMs = 120000) {
+export async function startBot(config: Config, token: string, startupWaitMs = 120000) {
   const db = openStorage(config), store = db.scope(config.DISCORD_GUILD_ID);
   // Installed packages declare their intent union; changes require a reconnect.
   const client = new Client({ intents: requiredIntents(installedDefinitions(config.NODE_ENV === 'production')), rest: { timeout: 15000, retries: 2 } });
   const transport = discordTransport(client, store.guildId), repository = new LoggingRepository(store);
   const modules = botRegistry(repository, transport.validate, config.NODE_ENV === 'production');
-  await store.initialize(config.COMMUNITY_NAME, modules);
+  // Storage can be briefly away at startup (a host restart, a hibernated instance) and a redeploy overlaps the
+  // previous worker whose lease lingers until it expires. Wait for both instead of crashing, so the host does not
+  // exhaust its restart budget before the condition clears.
+  const deadline = Date.now() + startupWaitMs;
+  const transient = (error: unknown) => error instanceof HttpError ? error.statusCode === 503 : error instanceof Error && error.message.includes('already holds this guild lock');
+  const untilReady = async <T>(what: string, attempt: () => Promise<T>): Promise<T> => {
+    for (;;) {
+      try { return await attempt(); }
+      catch (error) {
+        if (Date.now() >= deadline || !transient(error)) throw error;
+        console.info(`${what}. Retrying in 5 seconds.`);
+        await new Promise(resolve => setTimeout(resolve, 5000));
+      }
+    }
+  };
+  await untilReady('Storage is not ready yet', () => store.initialize(config.COMMUNITY_NAME, modules));
   let stopped = false, ready = false, sequence = 0, dropped = 0;
   let lastStorageSuccess = 0;
   let reportedFailures = 0;
@@ -40,19 +55,7 @@ export async function startBot(config: Config, token: string, leaseWaitMs = 1200
       try { await release(); } finally { await db.close(); }
     })().catch(() => { console.error('Storage unavailable during worker shutdown.'); });
   };
-  // A redeploy briefly overlaps the previous worker, and a killed worker's lease lingers until it expires.
-  // Wait for the lease instead of crashing so the host does not exhaust its restart budget first.
-  const release = await (async () => {
-    const deadline = Date.now() + leaseWaitMs;
-    for (;;) {
-      try { return await db.singleton(store.guildId, lost); }
-      catch (error) {
-        if (Date.now() >= deadline || !(error instanceof Error) || !error.message.includes('already holds this guild lock')) throw error;
-        console.info('Another worker holds the guild lease. Waiting for it to release or expire.');
-        await new Promise(resolve => setTimeout(resolve, 5000));
-      }
-    }
-  })();
+  const release = await untilReady('Another worker holds the guild lease or storage is not ready yet', () => db.singleton(store.guildId, lost));
   const health = createServer((request, response) => {
     const ok = request.url === '/health/live' || (ready && Date.now() - lastStorageSuccess < 30000);
     response.writeHead(ok ? 200 : 503, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ ok }));
