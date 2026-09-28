@@ -76,9 +76,11 @@ export class ModuleHost {
           }
           await this.store.acknowledge(id, { ...state, settings });
           this.revisions.set(id, state.desiredRevision);
-        } catch {
+        } catch (error) {
           if (!this.active.has(id)) await this.dispose(module, 'start failed');
-          await this.store.reject(id, state.desiredRevision, 'Settings could not be applied. Check this module’s requirements, connection, and dependencies.');
+          // Modules are trusted build-time packages, so their own message is the most useful thing to show the operator.
+          const detail = error instanceof Error && error.message ? error.message.slice(0, 200) : '';
+          await this.store.reject(id, state.desiredRevision, detail ? `Settings could not be applied: ${detail}` : 'Settings could not be applied. Check this module’s requirements, connection, and dependencies.');
         }
       }
     });
