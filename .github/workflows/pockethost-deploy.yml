@@ -23,7 +23,13 @@ jobs:
         run: |
           test -n "$SSH_KEY" || { echo "Set the POCKETHOST_SSH_KEY secret."; exit 1; }
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/pockethost && chmod 600 ~/.ssh/pockethost
+          # Rebuild the key from its base64 body so a paste that lost line breaks or gained CR characters still loads.
+          body=$(printf '%s' "$SSH_KEY" | tr -d '\r' | sed -e 's/-----BEGIN OPENSSH PRIVATE KEY-----//' -e 's/-----END OPENSSH PRIVATE KEY-----//' | tr -d ' \n\t')
+          printf '%s' "$SSH_KEY" | grep -q 'BEGIN OPENSSH PRIVATE KEY' || { echo "POCKETHOST_SSH_KEY must be the OpenSSH private key, including its BEGIN and END lines."; exit 1; }
+          { echo '-----BEGIN OPENSSH PRIVATE KEY-----'; printf '%s' "$body" | fold -w 70; echo; echo '-----END OPENSSH PRIVATE KEY-----'; } > ~/.ssh/pockethost
+          chmod 600 ~/.ssh/pockethost
+          echo "Public key derived from the secret (must match the key registered in PocketHost):"
+          ssh-keygen -y -f ~/.ssh/pockethost || { echo "The secret is not a valid private key. Paste it again from the original source."; exit 1; }
           ssh-keyscan -p 2222 ftp.pockethost.io >> ~/.ssh/known_hosts 2>/dev/null
       - name: Upload hooks and migrations
         env:

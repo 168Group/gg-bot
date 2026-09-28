@@ -14,8 +14,14 @@ export interface IdentityProvider {
   membership(tokens: OAuthTokens): Promise<{ roles: string[]; tokens: OAuthTokens }>;
 }
 async function discordRequest(path: string, init: RequestInit) {
-  const response = await fetch(`https://discord.com/api/v10${path}`, { ...init, signal: AbortSignal.timeout(10000) });
-  if (!response.ok) throw new HttpError(401, 'DISCORD_ACCESS', 'Discord could not confirm your access. Sign in again.');
+  let response: Response;
+  try { response = await fetch(`https://discord.com/api/v10${path}`, { ...init, signal: AbortSignal.timeout(10000) }); }
+  catch { console.error(`Discord API ${path.split('?')[0]} was unreachable.`); throw new HttpError(401, 'DISCORD_ACCESS', 'Discord could not confirm your access. Sign in again.'); }
+  if (!response.ok) {
+    // Operators need the failing step and status; the response body can contain tokens, so it is never logged.
+    console.error(`Discord API ${path.split('?')[0]} returned ${response.status}.`);
+    throw new HttpError(401, 'DISCORD_ACCESS', 'Discord could not confirm your access. Sign in again.');
+  }
   return response.json();
 }
 export function discordIdentity(config: Config, clientId: string, clientSecret: string): IdentityProvider {
