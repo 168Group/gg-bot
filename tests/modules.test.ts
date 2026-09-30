@@ -25,6 +25,20 @@ function storage(states:Map<string,ModuleState>) {return {
   async reject(id:string,_revision:number,message:string){states.get(id)!.applyError=message;}
 };}
 describe('module contract',()=>{
+  it('only polls jobs for enabled modules that declare job types', async () => {
+    const states = new Map([['example', state('example')]]);
+    const host = new ModuleHost('guild', [exampleModule()], storage(states), logger);
+    expect(host.activeJobModuleIds()).toEqual([]);
+    await host.sync();
+    expect(host.activeJobModuleIds()).toEqual(['example']);
+    states.set('example', { ...states.get('example')!, enabled: false, desiredRevision: 2 });
+    await host.sync();
+    expect(host.activeJobModuleIds()).toEqual([]);
+    const noJobs = new ModuleHost('guild', [{ ...exampleModule(), jobSchemas: {}, async start() {} }], storage(new Map([['example', state('example')]])), logger);
+    await noJobs.sync();
+    expect(noJobs.activeModuleIds()).toEqual(['example']);
+    expect(noJobs.activeJobModuleIds()).toEqual([]);
+  });
   it('passes only installed modules’ declared secrets to the bot environment',()=>{
     const module={...exampleDefinition,manifest:{...exampleDefinition.manifest,requiredSecrets:['API_TOKEN']}};
     expect(moduleSecretEnvironment([module],{OMO_MODULE_EXAMPLE_API_TOKEN:'fixture-token',OMO_MODULE_OTHER_API_TOKEN:'other',DISCORD_CLIENT_SECRET:'oauth',UNRELATED:'value'})).toEqual({OMO_MODULE_EXAMPLE_API_TOKEN:'fixture-token'});
