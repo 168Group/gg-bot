@@ -36,6 +36,8 @@ Existing differing files are never overwritten by this first-install wizard. Ide
 
 Select a ready storage profile. Enter the Discord application ID, bot token, OAuth client secret, your owner user ID and a display name. Register the displayed OAuth callback in the Discord Developer Portal, and invite the bot to the intended guild with its required permissions. These Discord account actions remain under your control.
 
+Enable **Server Members Intent** and **Message Content Intent** in the Discord application’s Bot settings before activation. The bundled logging module declares both privileged intents, even if its event switches are off. See [activity logging](LOGGING.md) for event coverage, retention and upgrades.
+
 Save the connection and select Activate. Activation checks that the token belongs to the supplied application, synchronizes guild slash commands, and starts separate bot/web child processes. Bot credentials go only to bot; OAuth/session credentials go only to web. The launcher forwards dashboard requests to the web service on the same public origin. Both readiness probes must pass before setup reports success.
 
 Preparing another profile leaves the active connection alone. Activating stops the previous managed processes first. **Selecting another provider does not transfer settings, logs or queued deliveries.** The checkbox explicitly chooses to use the target database's own data. Original databases/profiles are retained; data export/import is a separate unfinished feature. Failed activation leaves services stopped with an error, rather than starting two workers or silently selecting another database.

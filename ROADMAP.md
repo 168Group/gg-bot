@@ -1,6 +1,6 @@
 # Remaining implementation and deployment
 
-Updated 2026-09-24. Unchecked requirements are unfinished work. The verified first slice is described in [HANDOFF.md](HANDOFF.md).
+Updated 2026-09-30. Unchecked requirements are unfinished work. The verified first slice is described in [HANDOFF.md](HANDOFF.md).
 
 ## Setup follow-through
 
@@ -12,16 +12,19 @@ Updated 2026-09-24. Unchecked requirements are unfinished work. The verified fir
 
 ## Development tooling follow-up
 
+- The demo restart/lease issue below was reproduced again during the 2026-09-29 channel-formatting preview rerun. A successful full browser suite followed by an immediate second run failed before tests with the same worker-lock error and left a PocketBase test child on port 8092. This remains separate from the logging renderer fix.
 - [ ] Harden demo shutdown/restart after a terminal process-group interruption. During the theme review, two restarts of `.local/demo-pocketbase` failed at `scripts/demo.ts:21` with `Another bot worker already holds this guild lock.` after the previous demo was stopped. Process inspection found no remaining demo/PocketBase process. An isolated `.local/theme-preview` database started normally. The module verification also reproduced a startup failure leaving an orphaned PocketBase child on port 8092; stopping that confirmed test child and allowing lease expiry restored startup. Reproduce signal ordering, failed-start cleanup and lease expiry before changing the ownership logic; do not bypass the worker lock.
 
 ## Next implementation slices
 
-- [ ] Expand beyond the three channel collectors currently in `modules/logging/bot`: messages, members, roles, threads, voice and moderation events required by the original plan. Add meaningful event-order, partial-cache and reconnect tests.
+- [x] Replace raw channel snapshot dumps in Discord with compact create/delete summaries and changed-field updates. Permission overwrites use counts or readable state transitions; detailed evidence remains in the dashboard. Regression fixtures reproduce large overwrite arrays seen in production screenshots. Local verification is recorded in docs/VERIFICATION.md; live Discord rendering still needs checking after downstream deployment.
+- [x] Add message edits/deletions (including bulk deletion), member nicknames, member role assignments/removals and voice joins/leaves. Ordinary new messages create no log records. Bounded-cache, missing-baseline, exclusion and dashboard coverage is verified locally; live Discord acceptance remains below.
+- [ ] Add the remaining event families: member joins/leaves, server role creation/update/deletion, thread lifecycle and moderation. Add real Gateway reconnect/replay and ordering acceptance checks; current collector fixtures exercise cache resets and partial updates.
 - [ ] Implement confirmed audit-log attribution and moderation correlation. Current records honestly show unknown attribution; no actor is inferred from proximity alone.
 - [ ] Finish durable batching/digests and burst recovery. Current delivery claims and retry/nonce reconciliation pass local tests; this is not evidence for the full batching acceptance gate.
 - [x] Implement the reusable module foundation: namespaced records on both providers, module-dispatched delayed jobs, command/intent declarations, sequential settings upgrades, dependency/execution guards, and package scaffolding/selection. See docs/MODULES.md. The original full bot acceptance gate still requires live verification and remaining logging coverage.
 - [ ] Verify all routing changes against already leased work, including crash/restart during a destination change. Existing tests cover claim fencing, expiry, exclusions and recovery but do not establish every in-flight route-change interleaving.
-- [ ] Expand dashboard acceptance to every new event family, attribution state, role and degraded-state workflow as those behaviors are implemented.
+- [ ] Expand dashboard acceptance to future event families, attribution states, access roles and degraded-state workflows. Current desktop/mobile coverage includes switches, previews and filters for message, nickname, member role and voice events.
 
 ## Deployment acceptance
 

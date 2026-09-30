@@ -39,12 +39,12 @@ export class ManagedRuntime {
       launch('web', { ...common, SESSION_ENCRYPTION_KEY, DISCORD_APPLICATION_ID: profile.discord.applicationId, DISCORD_CLIENT_SECRET: profile.discord.clientSecret, WEB_HOST: '127.0.0.1' });
       const deadline = Date.now() + 30000;
       while (Date.now() < deadline) {
-        if (this.failed()) throw new SetupError('A service stopped during startup. Check Discord credentials, guild access and storage connectivity.');
+        if (this.failed()) throw new SetupError('A service stopped during startup. Check Discord credentials, Server Members and Message Content intents, guild access and storage connectivity.');
         const checks = await Promise.all([webPort, botPort].map(port => fetch(`http://127.0.0.1:${port}/health/ready`, { signal: AbortSignal.timeout(2000) }).then(r => r.ok).catch(() => false)));
         if (checks.every(Boolean) && !this.failed()) { this.webUrl = `http://127.0.0.1:${webPort}`; this.status = 'running'; return; }
         await new Promise(done => setTimeout(done, 500));
       }
-      throw new SetupError('Services did not become ready. Check Discord credentials, guild access and storage connectivity.');
+      throw new SetupError('Services did not become ready. Check Discord credentials, Server Members and Message Content intents, guild access and storage connectivity.');
     } catch (error) { await this.stop(); this.status = 'failed'; throw error; }
   }
   private failed() { return this.status === 'failed'; }

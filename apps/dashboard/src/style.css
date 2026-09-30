@@ -300,3 +300,8 @@ footer>span:last-child{display:none}
 to{opacity:1;transform:translateY(0)}
 }
 }
+
+.log-preview-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 12px;margin:18px 0}
+.log-preview-field{min-width:0}.log-preview-field[data-inline="false"]{grid-column:1/-1}
+.log-preview .log-preview-field p{margin:5px 0 0}.log-preview-mention{color:#cfb6ff;background:#a878f020;padding:1px 3px;border-radius:3px}
+.log-preview>small{font-size:10px;line-height:1.5;color:var(--muted)}
