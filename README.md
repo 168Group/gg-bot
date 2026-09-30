@@ -2,7 +2,7 @@
 
 An open-source, self-hostable Discord bot and staff dashboard by OMOWorlds. Configure the name, guild and staff access for your community. Each deployment serves one Discord guild.
 
-**Current milestone:** pluggable module packages with scoped data, background jobs, command metadata and a working scaffold; channel creation/update/deletion logging, durable delivery, Discord OAuth, staff authorization, configurable routing/exclusions/metadata retention, diagnostics, and a development example module. Full message/member/role/voice/moderation logging is still unfinished. See [HANDOFF.md](HANDOFF.md) and [ROADMAP.md](ROADMAP.md).
+**Current milestone:** pluggable module packages with scoped data, background jobs, command metadata and a working scaffold; channel changes, message edits/deletions, member nickname/role changes and voice joins/leaves, durable delivery, Discord OAuth, staff authorization, configurable routing/exclusions/metadata retention, diagnostics, and a development example module. See [activity logging](docs/LOGGING.md) for coverage and upgrade instructions. Audit attribution, moderation and other event families remain unfinished. See [HANDOFF.md](HANDOFF.md) and [ROADMAP.md](ROADMAP.md).
 
 ## Set up your own bot in the browser
 
@@ -45,7 +45,7 @@ Both backends use the same application and module behavior. Selecting a provider
 
 1. Copy `.env.example` to `.env`, fill the deployment values privately, and configure the selected storage backend.
 2. Create a dedicated Discord test application. Register `http://localhost:3000/auth/discord/callback` exactly for local development. The OAuth scopes are `identify` and `guilds.members.read`.
-3. Invite the bot to the configured guild with View Channels, Send Messages, Embed Links and Read Message History where needed. The bundled logging collector requests `Guilds`; additional installed modules declare their own intents and permissions. Enable any required privileged intents in the developer portal.
+3. Invite the bot to the configured guild with View Channels, Send Messages, Embed Links and Read Message History where needed. Enable **Server Members Intent** and **Message Content Intent** in the application’s Bot settings before starting. Logging also requests Guilds, Guild Messages and Guild Voice States; installed modules contribute their own intents and permissions.
 4. Run `pnpm db:migrate` (PostgreSQL migration or PocketBase schema verification), then `pnpm discord:commands:sync` explicitly.
 5. Run `pnpm dev`. Open http://localhost:3000. Vite proxies API/OAuth to Fastify on localhost:3002; bot health is localhost:3001. This keeps login and CSRF on one browser origin.
 6. Sign in with an approved owner/admin account, choose a private text destination, save routing, enable Logging in Modules, wait for acknowledgement, and send a test from Diagnostics.

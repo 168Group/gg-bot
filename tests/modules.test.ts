@@ -2,6 +2,7 @@ import { moduleSecretEnvironment } from '../packages/core/src/module-secrets.js'
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { describe, it, expect } from 'vitest';
+import { GatewayIntentBits } from 'discord.js';
 import { mkdtemp, mkdir, readFile, writeFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
@@ -31,7 +32,7 @@ describe('module contract',()=>{
   it('generates commands and intents from metadata while rejecting invalid declarations',()=>{
     const commands=buildCommands([loggingDefinition,exampleDefinition]);
     expect(commands.map(c=>c.name)).toEqual(['bot','logging','example']);
-    expect(requiredIntents([loggingDefinition,exampleDefinition])).toEqual([1]);
+    expect(new Set(requiredIntents([loggingDefinition,exampleDefinition]))).toEqual(new Set([GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildVoiceStates]));
     expect(()=>requiredIntents([{...exampleDefinition,manifest:{...exampleDefinition.manifest,requiredIntents:['MadeUpIntent']}}])).toThrow('unknown Discord intent');
     expect(()=>validateRegistry([{...exampleDefinition,manifest:{...exampleDefinition.manifest,requiredBotPermissions:['MadeUpPermission']}}])).toThrow('unknown Discord permission');
     expect(commandAllowed('member',null)).toBe(true);expect(commandAllowed('admin','viewer')).toBe(false);expect(commandAllowed('admin','owner')).toBe(true);

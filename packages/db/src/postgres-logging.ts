@@ -2,14 +2,14 @@ import { randomUUID, createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { PostgresGuildStore } from './postgres.js';
 import type { Observation } from '../../module-sdk/src/server.js';
-import { loggingSettingsSchema, type LoggingSettings, type LogEvent } from '../../../modules/logging/shared/settings.js';
+import { filterEventTypes, loggingSettingsSchema, type LoggingSettings, type LogEvent } from '../../../modules/logging/shared/settings.js';
 import { HttpError } from '../../core/src/access.js';
 
 const selection = `e.id,e.type,e.subject_id AS "subjectId",e.subject_label AS "subjectLabel",e.channel_id AS "channelId",e.parent_id AS "parentId",
   e.observed_at AS "observedAt",e.before_value AS before,e.after_value AS after,e.actor_id AS "actorId",e.reason,e.attribution,
   e.config_revision AS "configRevision",e.expires_at AS "expiresAt",d.state AS "deliveryState",d.message_id AS "messageId",d.destination_id AS "destinationId"`;
 export const eventFilter = z.object({
-  type: z.enum(['channel.created', 'channel.updated', 'channel.deleted', 'logging.test']).optional(),
+  type: z.enum(filterEventTypes).optional(),
   subject: z.string().regex(/^\d{17,20}$/).optional(),
   cursor: z.string().max(300).optional(), limit: z.coerce.number().int().min(1).max(100).default(50)
 }).strict();

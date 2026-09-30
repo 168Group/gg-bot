@@ -1,20 +1,22 @@
 import { z } from 'zod';
 import type { GuildStore } from '../../../packages/db/src/index.js';
 import type { Observation } from '../../../packages/module-sdk/src/server.js';
-import { loggingSettingsSchema, type LoggingSettings } from '../shared/settings.js';
+import { filterEventTypes, loggingSettingsSchema, type LoggingSettings } from '../shared/settings.js';
+import { eventEnabled, excludedEvent } from '../shared/policy.js';
 export const eventFilter = z.object({
-  type: z.enum(['channel.created', 'channel.updated', 'channel.deleted', 'logging.test']).optional(),
+  type: z.enum(filterEventTypes).optional(),
   subject: z.string().regex(/^\d{17,20}$/).optional(), cursor: z.string().max(300).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50)
 }).strict();
 export class LoggingRepository {
+  collectionSettings: LoggingSettings | null = null;
   constructor(readonly store: GuildStore) {}
-  excluded(event: { subjectId: string; parentId: string | null }, settings: LoggingSettings): boolean {
-    return settings.excludedChannelIds.includes(event.subjectId) || settings.excludedCategoryIds.includes(event.subjectId) || (event.parentId !== null && settings.excludedCategoryIds.includes(event.parentId));
+  excluded(event: Pick<Observation, 'subjectId' | 'channelId' | 'parentId' | 'before' | 'after' | 'type'>, settings: LoggingSettings): boolean {
+    return excludedEvent(event, settings);
   }
   async capture(event: Observation, settings: LoggingSettings, revision: number) {
     if (event.guildId !== this.store.guildId || this.excluded(event, settings)) return;
-    if (event.type !== 'logging.test' && !settings.events[event.type as keyof LoggingSettings['events']]) return;
+    if (!eventEnabled(event.type, settings)) return;
     if (event.type === 'channel.updated' && JSON.stringify(event.before) === JSON.stringify(event.after)) return;
     await this.store.call('eventCapture', { event, settings, revision });
   }
