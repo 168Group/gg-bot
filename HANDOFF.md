@@ -16,6 +16,8 @@ The guided setup launcher provisions local PocketBase, uploads a first-install P
 
 ## Verified state
 
+The PocketHost polling/error-handling fix passed typecheck, lint, 63 unit tests, the 61 existing real database/integration tests, one new real HTTP proxy integration test and a production build locally. Regression tests reproduced the old misleading rate-limit error and primitive/null JSON failures before the fix. Lease-loss and cooldown tests confirm that rate limiting does not permit continued ownership. These tests do not establish live host throughput.
+
 The foundation passed typecheck, lint, builds, 18 unit tests, 53 real database/integration tests and eight desktop/mobile browser tests locally and in GitHub Actions before public-release preparation. See docs/VERIFICATION.md. No production credentials were used.
 
 The channel-formatting fix passed local typecheck, lint, production/fixture builds, 28 unit tests, 53 database/integration tests and eight browser tests. Final renderer refinements were checked again with the unit suite and the two desktop/mobile routing-preview tests. Local screenshots were reviewed; a real Discord send and Railway deployment were not performed.
@@ -24,6 +26,9 @@ The activity-logging update passed typecheck, lint, 52 unit tests, 61 database/i
 
 ## Load-bearing details
 
+- PocketHost origins (`*.pockethost.io`) use a 30-second worker poll interval. Other hosts retain two seconds. Idle delivery batches stop at the first empty claim, and modules without job types do not poll the job queue. Settings application and delivery on PocketHost can consequently take about 30 seconds plus processing time. Lease renewal remains every ten seconds and still fails closed on errors.
+- PocketBase HTTP 429 responses now produce `STORAGE_RATE_LIMIT` before JSON parsing, with a bounded in-process `Retry-After` cooldown. Non-JSON errors report the HTTP status without logging the body or credentials. A process restart does not preserve this cooldown. There is no automatic storage fallback.
+- On 2026-09-30, downstream Railway logs showed non-JSON storage failures beginning about five minutes after startup, then exhausted restarts. The configured PocketHost endpoint later returned healthy JSON and advertised a 1,000/hour per-IP cap. The old idle loop could exceed 12,000 requests/hour with logging enabled. Rate limiting is the leading explanation, but the old logs did not retain the upstream status, so the historical HTTP 429 is not proven. One idle logging module now uses roughly 840 requests/hour including lease renewals, before event traffic, dashboard traffic and extra modules. Busy deployments still need a larger host budget or a different hosting arrangement; do not treat lower polling as unlimited capacity.
 - Enable Server Members and Message Content privileged intents in the Discord application before starting this version, even when new event switches are off. Deploy matching bot and dashboard builds. No storage bundle change accompanies this update.
 - The raw Gateway collector runs before discord.js updates member/voice caches. Preserve that ordering. Member baseline fetching is bounded to 15 seconds; missing baselines record gaps instead of fabricated changes.
 - Discord.js MessageManager caching is explicitly disabled. The logging collector alone holds up to 1,000 messages for 30 minutes, with 4,000 content characters and ten attachment names per snapshot. Cache state clears on applied-policy changes, disconnect and shutdown; only edits/deletions persist content under event retention. Module message subscribers still receive live message content.
