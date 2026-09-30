@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { eventTypes, eventLabels } from '../../modules/logging/shared/settings.js';
 test('staff can inspect fixtures, save routing, preview and run a delivery test', async ({ page }) => {
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   await page.goto('/auth/demo');
@@ -39,6 +40,41 @@ test('anonymous users see sign-in and protected APIs reject access', async ({ pa
   await expect(page.getByRole('link', { name: 'Continue with Discord' })).toBeVisible();
   const response = await request.get('/api/modules/logging/events');
   expect(response.status()).toBe(401);
+});
+test('staff can configure, preview and inspect message, member and voice logging', async ({ page }) => {
+  await page.goto('/auth/demo');
+  await page.getByRole('link', { name: 'Configure logging' }).click();
+  await expect(page.getByText(/Enable Server Members Intent and Message Content Intent/)).toBeVisible();
+  const additions = eventTypes.filter(type => !type.startsWith('channel.'));
+  for (const type of additions) {
+    const toggle = page.getByRole('checkbox', { name: new RegExp(eventLabels[type]!) });
+    await expect(toggle).toBeVisible(); await toggle.uncheck();
+  }
+  await page.getByRole('checkbox', { name: /Message edited/ }).check();
+  await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+  await expect(page.getByText('Saved.', { exact: false })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('checkbox', { name: /Message edited/ })).toBeChecked();
+  await expect(page.getByRole('checkbox', { name: /Message deleted/ })).not.toBeChecked();
+  const expectedField: Record<string, string> = { 'message.edited': 'Before', 'message.deleted': 'Deleted content', 'member.nickname.updated': 'After', 'member.roles.updated': 'Roles added', 'voice.joined': 'Channel', 'voice.left': 'Channel' };
+  for (const type of additions) {
+    await page.getByLabel('Preview event', { exact: true }).selectOption(type);
+    await page.getByRole('button', { name: 'Preview log', exact: true }).click();
+    const preview = page.locator('.embed-preview');
+    await expect(preview.getByRole('heading', { name: eventLabels[type], exact: true })).toBeVisible();
+    await expect(preview.getByText(expectedField[type]!, { exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= (visualViewport?.width ?? innerWidth) + 1)).toBe(true);
+    await preview.screenshot({ path: `test-results/activity-${type}-${test.info().project.name}.png`, animations: 'disabled' });
+  }
+  await page.getByRole('link', { name: 'Events', exact: true }).click();
+  for (const type of additions) {
+    await page.getByLabel('Event type', { exact: true }).selectOption(type);
+    const row = page.getByRole('link', { name: new RegExp(eventLabels[type]!) }).first();
+    await expect(row).toBeVisible();
+  }
+  await page.getByRole('link', { name: /Voice channel left/ }).first().click();
+  await expect(page.getByRole('heading', { name: 'Voice channel left', exact: true })).toBeVisible();
+  await expect(page.getByText('Unknown. No confirmed audit evidence.', { exact: true })).toBeVisible();
 });
 test('a separate module saves settings, runs a job, and reads its own persisted data', async ({ page }) => {
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));

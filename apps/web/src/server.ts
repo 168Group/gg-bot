@@ -85,7 +85,7 @@ export async function createServer(options: ServerOptions) {
     const status = await store.call('status', {});
     const row = status.health;
     return { data: { ...status, storageProvider: db.kind, online: Boolean(row && Date.now() - new Date(row.heartbeat).getTime() < 60000 && row.status !== 'offline'),
-      capabilities: { channels: true, members: false, roles: false, messages: false, voice: false, moderation: false } } };
+      capabilities: { channels: modules.some(m => m.manifest.id === 'logging'), members: modules.some(m => m.manifest.id === 'logging'), roles: modules.some(m => m.manifest.id === 'logging'), messages: modules.some(m => m.manifest.id === 'logging'), voice: modules.some(m => m.manifest.id === 'logging'), moderation: false } } };
   });
   app.get('/api/catalog/channels', async request => { await auth.authorize(request); return { data: await store.catalog() }; });
   app.get('/api/catalog/roles', async request => { await auth.authorize(request); return { data: await store.call('rolesGet', {}) }; });

@@ -1,3 +1,4 @@
+import { previewEvent } from '../modules/logging/bot/preview.js';
 import { installedDefinitions } from '../registry/definitions.js';
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -7,7 +8,7 @@ import { createServer } from '../apps/web/src/server.js';
 import { ModuleHost } from '../packages/core/src/host.js';
 import { botRegistry } from '../registry/bot.js';
 import { LoggingRepository } from '../modules/logging/bot/repository.js';
-import { defaultLoggingSettings } from '../modules/logging/shared/settings.js';
+import { eventTypes, defaultLoggingSettings } from '../modules/logging/shared/settings.js';
 import { DeliveryWorker } from '../modules/logging/bot/delivery.js';
 import { runModuleJobs } from '../packages/core/src/jobs.js';
 
@@ -45,6 +46,12 @@ for (let index = 0; loggingInstalled && index < 5; index++) await repository.cap
   observedAt: new Date(Date.now() - (index + 1) * 185000).toISOString(), before: index % 2 ? { name: 'previous-name' } : null,
   after: index === 3 ? null : { name: ['collector-showcase', 'trading-floor', 'community-events', 'weekend-popup', 'announcements'][index]!, type: 'GuildText' }
 }, settings, 2);
+for (const type of loggingInstalled ? eventTypes.filter(type => !type.startsWith('channel.')) : []) {
+  const sample = previewEvent(type);
+  await repository.capture({ guildId: store.guildId, sourceKey: `fixture:activity:${type}`, type,
+    subjectId: sample.subjectId, channelId: sample.channelId ? '100000000000000011' : null, parentId: null,
+    label: sample.subjectLabel, observedAt: new Date().toISOString(), before: sample.before, after: sample.after }, settings, 2);
+}
 const worker = new DeliveryWorker(repository, { validate, async find() { return null; }, async send() { return `100${Date.now()}`; } });
 await store.heartbeat('online', { gateway: false, simulated: true });
 let timer: ReturnType<typeof setTimeout> | undefined;

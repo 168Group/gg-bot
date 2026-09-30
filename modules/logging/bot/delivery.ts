@@ -1,5 +1,6 @@
 import type { LoggingRepository } from './repository.js';
 import { renderEvent } from './render.js';
+import { eventEnabled } from '../shared/policy.js';
 export type DiscordPayload = ReturnType<typeof renderEvent>;
 export interface DeliveryTransport {
   validate(destinationId: string): Promise<void>;
@@ -16,7 +17,7 @@ export class DeliveryWorker {
     try {
       const active = await this.repository.activeSettings();
       const event = await this.repository.detail(delivery.event_id);
-      if (!active.enabled || this.repository.excluded(event, active.settings) || active.settings.destinationId !== delivery.destination_id || new Date(event.expiresAt).getTime() <= Date.now()) {
+      if (!active.enabled || !eventEnabled(event.type, active.settings) || this.repository.excluded(event, active.settings) || active.settings.destinationId !== delivery.destination_id || new Date(event.expiresAt).getTime() <= Date.now()) {
         await store.call('deliveryFinish', { id: delivery.id, claimToken: delivery.claim_token, state: 'cancelled' }); return;
       }
       await this.transport.validate(delivery.destination_id);

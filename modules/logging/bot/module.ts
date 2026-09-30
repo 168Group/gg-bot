@@ -10,6 +10,7 @@ export function loggingModule(repository: LoggingRepository, validateDestination
     await validateDestination(next.destinationId);
     await repository.apply(next);
     settings = next; revision = nextRevision;
+    repository.collectionSettings = next;
   };
   return { ...loggingDefinition,
     async start(context) {
@@ -23,12 +24,12 @@ export function loggingModule(repository: LoggingRepository, validateDestination
       };
       context.onJob('test', run); context.onJob('diagnostics', run);
       context.onObservation(event => repository.capture(event, settings, revision));
-      context.onCommand('logging status', async () => `Channel logging active · configuration revision ${revision}. Other event families are not implemented yet.`);
+      context.onCommand('logging status', async () => `Activity logging active · configuration revision ${revision}. Channels, message edits/deletions, nicknames, member roles and voice joins/leaves are supported.`);
       context.onCommand('logging test', async () => {
         const id = await repository.store.enqueueJob('logging', 'test', {}, crypto.randomUUID());
         return `Test queued: ${id}. It expires after five minutes if the worker is offline.`;
       });
     }, applySettings: apply,
-    async stop(reason) { if (reason === 'disabled') await repository.cancelPending(); }
+    async stop(reason) { repository.collectionSettings = null; if (reason === 'disabled') await repository.cancelPending(); }
   };
 }

@@ -1,5 +1,4 @@
-import type { LogEvent } from '../shared/settings.js';
-const titles: Record<string, string> = { 'channel.created': 'Channel created', 'channel.updated': 'Channel updated', 'channel.deleted': 'Channel deleted', 'logging.test': 'Delivery test' };
+import { eventLabels as titles, type LogEvent } from '../shared/settings.js';
 export function clip(text: string, limit: number): string {
   if (text.length <= limit) return text;
   const suffix = '… [truncated]';
@@ -124,14 +123,66 @@ function channelFields(event: LogEvent): Field[] {
   return fields;
 }
 
+function activityFields(event: LogEvent): Field[] {
+  const fields: Field[] = [];
+  const add = (name: string, value: string, inline = false) => fields.push({ name, value, inline });
+  const snapshot = event.after ?? event.before;
+  const text = (data: Record<string, unknown> | null) => typeof data?.content === 'string'
+    ? data.content ? safeText(data.content, 820) + (data.contentTruncated ? '\nAdditional text was not captured.' : '') : 'No text content'
+    : 'Content unavailable. It was not cached or not provided by Discord.';
+  const attachments = (data: Record<string, unknown> | null) => {
+    if (!Array.isArray(data?.attachments)) return 'Attachment details unavailable';
+    if (!data.attachments.length) return 'None';
+    return data.attachments.slice(0, 10).map(a => a && typeof a.name === 'string' ? safeText(a.name, 70) : 'Unnamed attachment').join('\n')
+      + (data.attachmentsTruncated ? '\nAdditional attachments were not captured.' : '');
+  };
+  const roles = (value: unknown) => Array.isArray(value) ? value.filter(isId) : [];
+  const roleList = (ids: string[]) => ids.slice(0, 20).map(id => `<@&${id}>`).join(' ')
+    + (ids.length > 20 ? `\n+${ids.length - 20} more roles. Full details in dashboard.` : '');
+  if (event.type.startsWith('message.')) {
+    add('Author', isId(snapshot?.authorId) ? `<@${snapshot.authorId}>` : 'Unknown');
+    if (event.type === 'message.edited') {
+      add('Before', text(event.before)); add('After', text(event.after));
+      if (JSON.stringify(event.before?.attachments) !== JSON.stringify(event.after?.attachments)) {
+        add('Attachments before', attachments(event.before)); add('Attachments after', attachments(event.after));
+      }
+    } else {
+      add('Deleted content', text(event.before));
+      if (Array.isArray(event.before?.attachments) && event.before.attachments.length) add('Attachments', attachments(event.before));
+      add('Deleted by', isId(event.actorId) ? `<@${event.actorId}>` : 'Unknown · no confirmed audit evidence');
+    }
+  } else if (event.type === 'member.nickname.updated') {
+    const nickname = (data: Record<string, unknown> | null) => data?.nickname === null ? 'No nickname'
+      : typeof data?.nickname === 'string' ? safeText(data.nickname) || 'No nickname' : 'Not recorded';
+    add('Before', nickname(event.before), true); add('After', nickname(event.after), true);
+    add('Changed by', isId(event.actorId) ? `<@${event.actorId}>` : 'Unknown · no confirmed audit evidence');
+  } else if (event.type === 'member.roles.updated') {
+    if (!Array.isArray(event.before?.roles) || !Array.isArray(event.after?.roles)) add('Roles', 'Previous or current roles unavailable. Changes cannot be determined.');
+    else {
+      const before = roles(event.before.roles), after = roles(event.after.roles);
+      const added = after.filter(id => !before.includes(id)), removed = before.filter(id => !after.includes(id));
+      if (added.length) add('Roles added', roleList(added));
+      if (removed.length) add('Roles removed', roleList(removed));
+      if (!added.length && !removed.length) add('Roles', 'No role changes');
+    }
+    add('Changed by', isId(event.actorId) ? `<@${event.actorId}>` : 'Unknown · no confirmed audit evidence');
+  } else if (event.type.startsWith('voice.')) {
+    add('Channel', isId(event.channelId) ? `<#${event.channelId}>` : 'Not recorded');
+  }
+  if (event.reason?.trim()) add('Reason', safeText(event.reason, 500));
+  return fields;
+}
+
 export function renderEvent(event: LogEvent, marker: string, accentColor: string) {
   const test = event.type === 'logging.test';
   const title = Object.hasOwn(titles, event.type) ? titles[event.type]! : 'Activity observed';
+  const message = event.type.startsWith('message.'), member = event.type.startsWith('member.') || event.type.startsWith('voice.');
   const description = test ? 'Log delivery is working. This test was requested by an administrator.'
-    : `${safeText(event.subjectLabel, 200)}${event.type !== 'channel.deleted' && isId(event.channelId) ? ` · <#${event.channelId}>` : ''}`;
+    : message ? isId(event.channelId) ? `<#${event.channelId}>` : 'Channel unavailable'
+    : `${member && isId(event.subjectId) ? `<@${event.subjectId}> · ` : ''}${safeText(event.subjectLabel, 200)}${!member && event.type !== 'channel.deleted' && isId(event.channelId) ? ` · <#${event.channelId}>` : ''}`;
   // The footer suffix is used by DiscordTransport.find for retry reconciliation.
-  const footer = { text: test ? `Delivery reference · ${marker}` : `Channel ID: ${event.subjectId} · ${marker}` };
-  const fields = test ? [] : channelFields(event);
+  const footer = { text: test ? `Delivery reference · ${marker}` : `${message ? 'Message' : member ? 'Member' : 'Channel'} ID: ${event.subjectId} · ${marker}` };
+  const fields = test ? [] : message || member ? activityFields(event) : channelFields(event);
   // Reserve total text space as well as respecting each field's individual limit.
   let budget = 5800 - title.length - description.length - footer.text.length;
   for (const field of fields) {
