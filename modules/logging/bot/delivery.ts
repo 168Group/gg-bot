@@ -10,15 +10,18 @@ export interface DeliveryTransport {
 export class DestinationError extends Error { constructor(readonly permanent: boolean) { super(permanent ? 'Destination unavailable. Check channel and permissions.' : 'Delivery interrupted. A retry is scheduled.'); } }
 export class DeliveryWorker {
   constructor(private repository: LoggingRepository, private transport: DeliveryTransport) {}
-  async tick(): Promise<void> {
+  async drain(limit = 5): Promise<void> {
+    for (let i = 0; i < limit; i++) if (!await this.tick()) break;
+  }
+  async tick(): Promise<boolean> {
     const { store } = this.repository;
     const delivery = await store.call('deliveryClaim', {});
-    if (!delivery) return;
+    if (!delivery) return false;
     try {
       const active = await this.repository.activeSettings();
       const event = await this.repository.detail(delivery.event_id);
       if (!active.enabled || !eventEnabled(event.type, active.settings) || this.repository.excluded(event, active.settings) || active.settings.destinationId !== delivery.destination_id || new Date(event.expiresAt).getTime() <= Date.now()) {
-        await store.call('deliveryFinish', { id: delivery.id, claimToken: delivery.claim_token, state: 'cancelled' }); return;
+        await store.call('deliveryFinish', { id: delivery.id, claimToken: delivery.claim_token, state: 'cancelled' }); return true;
       }
       await this.transport.validate(delivery.destination_id);
       const existing = delivery.attempts > 1 ? await this.transport.find(delivery.destination_id, delivery.marker) : null;
@@ -32,5 +35,6 @@ export class DeliveryWorker {
       const state = permanent ? 'blocked' : expired ? 'failed' : 'pending';
       await store.call('deliveryFinish', { id: delivery.id, claimToken: delivery.claim_token, state, error: permanent ? 'Destination unavailable. Check channel and permissions.' : 'Delivery interrupted. Check worker and destination status.', delayMs: delay });
     }
+    return true;
   }
 }

@@ -6,6 +6,11 @@ export class PocketBaseAdapter implements StorageDriver {
   readonly kind = 'pocketbase' as const;
   private owners = new Map<string, string>();
   private releases = new Set<() => Promise<void>>();
+  private retryAt = 0;
+  private rateLimitError() {
+    const seconds = Math.max(1, Math.ceil((this.retryAt - Date.now()) / 1000));
+    return new HttpError(503, 'STORAGE_RATE_LIMIT', `PocketBase host rate limit reached (HTTP 429). Retry in ${seconds} seconds. Reduce polling or review the host request limits.`);
+  }
   constructor(private url: string, private key: string, private timeoutMs = 10000) {
     const parsed = new URL(url);
     if (parsed.username || parsed.password || parsed.search || parsed.hash || parsed.pathname !== '/') throw new Error('POCKETBASE_URL must be an origin without credentials or a path.');
@@ -15,17 +20,29 @@ export class PocketBaseAdapter implements StorageDriver {
   }
   scope(guildId: string) { return new GuildStore(this, guildId); }
   async call<K extends keyof Operations>(guildId: string, operation: K, input: Operations[K]['input']): Promise<Operations[K]['output']> {
+    if (Date.now() < this.retryAt) throw this.rateLimitError();
     let response: Response;
     try {
       response = await fetch(`${this.url}/api/omo/v1/${operation}`, { method: 'POST', redirect: 'error',
         signal: AbortSignal.timeout(this.timeoutMs), headers: { 'Content-Type': 'application/json', 'X-OMO-Storage-Key': this.key },
         body: JSON.stringify({ guildId, input, owner: this.owners.get(guildId) }) });
     } catch { throw new HttpError(503, 'STORAGE_UNAVAILABLE', 'PocketBase is unreachable. No storage fallback was performed.'); }
-    let body: { data?: Operations[K]['output']; error?: { code: string; message: string } };
-    try { body = await response.json(); } catch { throw new HttpError(503, 'STORAGE_PROTOCOL', 'PocketBase returned an invalid storage response.'); }
+    // Host firewalls can return plain text or HTML before the PocketBase hooks run.
+    if (response.status === 429) {
+      const retry = response.headers.get('retry-after');
+      const delay = retry && /^\d+$/.test(retry) ? Number(retry) * 1000 : retry ? Date.parse(retry) - Date.now() : 60000;
+      this.retryAt = Date.now() + (Number.isFinite(delay) ? Math.min(3600000, Math.max(1000, delay)) : 60000);
+      await response.body?.cancel();
+      throw this.rateLimitError();
+    }
+    let value: unknown;
+    try { value = await response.json(); } catch { throw new HttpError(503, 'STORAGE_PROTOCOL', `PocketBase returned a non-JSON storage response (HTTP ${response.status}). Check the storage host and proxy.`); }
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new HttpError(503, 'STORAGE_PROTOCOL', 'PocketBase storage hooks returned an invalid response.');
+    const body = value as { data?: Operations[K]['output']; error?: { code?: unknown } };
     if (!response.ok) {
       const codes: Record<string, string> = { REVISION_CONFLICT: 'Settings changed in another session. Reload before saving.', NOT_FOUND: 'Record not found or expired.', INVALID_INPUT: 'Invalid storage input.', LEASE_LOST: 'Worker ownership was lost.' };
-      const code = body.error?.code ?? 'STORAGE_ACCESS';
+      const suppliedCode = body.error?.code;
+      const code = typeof suppliedCode === 'string' && Object.hasOwn(codes, suppliedCode) ? suppliedCode : 'STORAGE_ACCESS';
       throw new HttpError([400, 403, 404, 409].includes(response.status) ? response.status : 503, code, codes[code] ?? 'PocketBase storage access failed. Check the instance, hooks, and service key.');
     }
     if (!('data' in body)) throw new HttpError(503, 'STORAGE_PROTOCOL', 'PocketBase storage hooks returned an invalid response.');
