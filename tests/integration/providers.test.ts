@@ -14,7 +14,8 @@ import { migrate } from '../../packages/db/src/migrate.js';
 import type { StorageDriver } from '../../packages/db/src/contracts.js';
 import { loggingDefinition } from '../../modules/logging/manifest.js';
 import { LoggingRepository } from '../../modules/logging/bot/repository.js';
-import { defaultLoggingSettings } from '../../modules/logging/shared/settings.js';
+import { defaultLoggingSettings, eventTypes, eventLabels } from '../../modules/logging/shared/settings.js';
+import { previewEvent } from '../../modules/logging/bot/preview.js';
 import { DeliveryWorker } from '../../modules/logging/bot/delivery.js';
 import { createServer } from '../../apps/web/src/server.js';
 import { readConfig } from '../../packages/core/src/config.js';
@@ -49,6 +50,60 @@ describe.each(['postgres', 'pocketbase'] as const)('%s storage contract', provid
     expect((await store().getModule('logging')).appliedSettings).toEqual(settings);
     await store().heartbeat('online', { gateway: true }); await store().incident('A known gap.', null);
     const status = await store().call('status', {}); expect(status.health?.status).toBe('online'); expect(status.incidents[0]?.dropped_count).toBeNull();
+  });
+  it('stores, filters and delivers every supported activity type without a schema upgrade', async () => {
+    await activate();
+    for (const type of eventTypes) {
+      const sample = previewEvent(type);
+      await repository().capture({ ...event(type), type, subjectId: sample.subjectId, label: sample.subjectLabel,
+        channelId: sample.channelId ? '100000000000000031' : null, before: sample.before, after: sample.after }, settings, 2);
+      const list = await repository().list({ type, limit: 10 });
+      expect(list.events).toHaveLength(1); expect(list.events[0]?.before).toEqual(sample.before); expect(list.events[0]?.after).toEqual(sample.after);
+    }
+    const titles: string[] = [];
+    const worker = new DeliveryWorker(repository(), { async validate() {}, async find() { return null; }, async send(_id, payload, marker) {
+      titles.push(payload.embeds[0]!.title); expect(payload.allowedMentions.parse).toEqual([]); expect(payload.embeds[0]!.footer.text.endsWith(marker)).toBe(true); return destination;
+    } });
+    for (let i = 0; i < eventTypes.length; i++) await worker.tick();
+    expect(titles.sort()).toEqual(eventTypes.map(t => eventLabels[t]).sort());
+    expect((await repository().list({ limit: 50 })).events.every(e => e.deliveryState === 'sent')).toBe(true);
+  });
+  it('excludes message/voice channels independently of the subject and cancels disabled queued events', async () => {
+    await activate();
+    const message = { ...event(), type: 'message.deleted', subjectId: '100000000000000099', channelId: '100000000000000031', before: { content: 'Private' }, after: null };
+    await repository().capture(message, { ...settings, excludedChannelIds: [message.channelId] }, 2);
+    await repository().capture({ ...message, sourceKey: 'destination', channelId: destination }, settings, 2);
+    await repository().capture({ ...message, sourceKey: 'disabled' }, { ...settings, events: { ...settings.events, 'message.deleted': false } }, 2);
+    expect((await repository().list({ limit: 50 })).events).toHaveLength(0);
+    await repository().capture(message, settings, 2);
+    const changed = await store().updateModule('logging', 2, owner, { settings: { ...settings, events: { ...settings.events, 'message.deleted': false } } });
+    await store().acknowledge('logging', changed);
+    await new DeliveryWorker(repository(), { async validate() { throw new Error('Disabled events must not reach Discord'); }, async find() { return null; }, async send() { throw new Error('Must not send'); } }).tick();
+    expect((await repository().list({ limit: 50 })).events[0]?.deliveryState).toBe('cancelled');
+    const voice = { ...event('voice-excluded'), type: 'voice.joined', subjectId: owner, channelId: message.channelId };
+    await repository().capture(voice, { ...settings, excludedChannelIds: [message.channelId] }, 2);
+    expect((await repository().list({ type: 'voice.joined', limit: 50 })).events).toHaveLength(0);
+  });
+  it('rechecks new channel exclusions before delivering already queued message events', async () => {
+    await activate(); const observation = { ...event(), type: 'message.deleted', subjectId: '100000000000000099', channelId: '100000000000000031' };
+    await repository().capture(observation, settings, 2);
+    const changed = await store().updateModule('logging', 2, owner, { settings: { ...settings, excludedChannelIds: [observation.channelId] } });
+    await store().acknowledge('logging', changed);
+    await new DeliveryWorker(repository(), { async validate() { throw new Error('Must cancel before contacting Discord'); }, async find() { return null; }, async send() { throw new Error('Must not send'); } }).tick();
+    expect((await repository().list({ limit: 50 })).events[0]?.deliveryState).toBe('cancelled');
+  });
+  it('upgrades existing logging settings once while preserving choices and leaving new events off', async () => {
+    await activate();
+    const legacy = { ...settings, metadataRetentionDays: 7, events: { 'channel.created': false, 'channel.updated': true, 'channel.deleted': false } };
+    const json = JSON.stringify(legacy).replaceAll("'", "''");
+    await mutateForTest(`UPDATE module_config SET settings_version=1,applied_settings_version=1,settings='${json}'::jsonb,applied_settings='${json}'::jsonb WHERE module_id='logging'`,
+      `UPDATE omo_module SET settings_version=1,applied_settings_version=1,settings='${json}',applied_settings='${json}' WHERE module_id='logging'`);
+    await store().initialize('Test community', [loggingDefinition]);
+    const upgraded = await store().getModule('logging');
+    expect(upgraded.settingsVersion).toBe(2); expect(upgraded.settings).toMatchObject(legacy); expect(upgraded.enabled).toBe(true);
+    for (const type of eventTypes.filter(t => !t.startsWith('channel.'))) expect((upgraded.settings as typeof settings).events[type]).toBe(false);
+    await store().initialize('Test community', [loggingDefinition]);
+    expect((await store().getModule('logging')).desiredRevision).toBe(upgraded.desiredRevision);
   });
   it('serializes concurrent settings edits and rejects the stale writer', async () => {
     const outcomes = await Promise.allSettled([store().updateModule('logging', 1, owner, { settings }), store().updateModule('logging', 1, owner, { enabled: true })]);
