@@ -14,6 +14,14 @@ test('staff can inspect fixtures, save routing, preview and run a delivery test'
   await expect(page.getByText('Saved.', { exact: false })).toBeVisible();
   await page.getByRole('button', { name: 'Preview log' }).click();
   await expect(page.getByText('PREVIEW · NOT SENT', { exact: true })).toBeVisible();
+  const preview = page.locator('.embed-preview');
+  await expect(preview.getByText('Text channel', { exact: true })).toBeVisible();
+  await expect(preview.getByText('1 custom overwrite · 1 role', { exact: true })).toBeVisible();
+  await expect(preview.getByText('Before', { exact: true })).toHaveCount(0);
+  await expect(preview.getByText('After', { exact: true })).toHaveCount(0);
+  await expect(preview.getByText('Reason', { exact: true })).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= (visualViewport?.width ?? innerWidth) + 1)).toBe(true);
+  await preview.screenshot({ path: `test-results/log-preview-${test.info().project.name}.png`, animations: 'disabled' });
   await page.reload();
   await expect(page.getByLabel('Log destination')).toHaveValue('100000000000000010');
   await page.getByRole('link', { name: 'Diagnostics', exact: true }).click();

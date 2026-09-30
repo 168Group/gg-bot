@@ -17,8 +17,10 @@ export function registerLoggingApi(api: ProtectedModuleApi) {
   api.route('GET', '/events', eventFilter, async (input, { store }) => new LoggingRepository(store).list(input));
   api.route('GET', '/events/:eventId', z.object({}).strict(), async (_, { store, params }) => new LoggingRepository(store).detail(z.uuid().parse(params.eventId)));
   api.route('POST', '/preview', z.object({ settings: loggingSettingsSchema }).strict(), async ({ settings }) => renderEvent({
-    id: randomUUID(), type: 'channel.created', subjectId: '100000000000000001', subjectLabel: '#new-channel', channelId: null,
-    parentId: null, observedAt: new Date().toISOString(), before: null, after: { name: 'new-channel', type: 'text' }, actorId: null,
+    id: randomUUID(), type: 'channel.created', subjectId: '100000000000000001', subjectLabel: 'new-channel', channelId: null,
+    parentId: null, observedAt: new Date().toISOString(), before: null,
+    after: { name: 'new-channel', type: 'GuildText', parentId: null, topic: 'A new place for your community.', nsfw: false, slowmode: 0,
+      overwrites: [{ id: '100000000000000002', type: 0, allow: ['ViewChannel'], deny: ['ManageChannels'] }] }, actorId: null,
     reason: null, attribution: 'unavailable', configRevision: 0, expiresAt: new Date().toISOString(), deliveryState: null, messageId: null, destinationId: null
   }, 'PREVIEW · no message sent', settings.accentColor));
   for (const type of ['test', 'diagnostics']) api.route('POST', `/${type}`, z.object({ key: z.uuid() }).strict(), async ({ key }, { store }) => ({ jobId: await store.enqueueJob('logging', type, {}, key) }), true);
