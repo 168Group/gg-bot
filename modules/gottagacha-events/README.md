@@ -37,4 +37,6 @@ Provide sanitized examples for list pages, empty results, changes/cancellations,
 
 ## Remaining gates
 
+The merged PocketHost recovery update uses 30-second worker polling, so settings and jobs may take roughly 30 seconds plus processing time. Before deploying an additional module, verify the remote request budget. Source review of the existing loop estimates about 1,080 idle requests/hour with logging plus this installed module (including lease renewal), above the host's observed 1,000/hour per-IP cap before dashboard/event traffic. This estimate still needs instrumentation. Generic batching/headroom is requested upstream; local fixture verification does not establish deployment capacity.
+
 Live announcements depend on upstream reusable delivery/reconciliation support. Preview records cannot replace it. Member actions depend on verified API identity and authorization. Event creation needs a reviewable exact draft revision, expiring explicit confirmation, a rechecked staff role/channel and an idempotent job whose uncertain result is reconciled before retry. Deployment and real publishing require separate authorization.

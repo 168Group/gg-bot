@@ -52,6 +52,12 @@ The first events browser cases failed because the test queried Enable before the
 
 Screenshots `test-results/gg-events-desktop.png` and `test-results/gg-events-mobile.png` were visually reviewed. The page labels samples, distinguishes preview readiness from API connection, shows never-sent announcements, explains draft expiry and blocks publishing. No horizontal overflow was observed. Tests use synthetic identity and local storage, not live API/Discord acceptance. No new storage migration or hook upload is needed.
 
+### Events foundation with merged incident recovery
+
+Reviewed and merged downstream PR #5 (`df430287`) after the fixture foundation commit. Both handoff verification additions were retained during the sole documentation conflict; downstream module registrations, Railway manifests, startup retries, command synchronization and OAuth diagnostics remain intact. Registry synchronization, typecheck, lint, 69 unit tests, 66 real integration tests, production/fixture builds and all 12 desktop/mobile browser tests passed on the combined branch.
+
+The base task reported successful live bot/dashboard readiness after its separate incident deployment. This task performed no production deployment. Readiness is not proof of sustained two-module capacity: nominal source-level counting suggests about 1,080 idle storage requests/hour with two installed modules before dashboard/events. Upstream budget instrumentation/batching is requested and remains a deployment gate. This estimate is not a measured load test.
+
 ### Commands
 
 Install the pinned toolchain and frozen dependencies. Run `pnpm pocketbase:install`, `pnpm exec playwright install chromium`, `pnpm check`, `pnpm pocketbase:bundle`, then `pnpm test:e2e`. Local listeners and child processes must be permitted. Do not rebuild frontend assets while tests are using them.

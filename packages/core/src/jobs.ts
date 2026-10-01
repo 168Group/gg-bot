@@ -2,7 +2,7 @@ import type { GuildStore } from '../../db/src/index.js';
 import type { ModuleHost } from './host.js';
 /** Handler side effects must be idempotent by job.id; an interrupted job can be retried. */
 export async function runModuleJobs(store: GuildStore, host: ModuleHost) {
-  const moduleIds = host.activeModuleIds();
+  const moduleIds = host.activeJobModuleIds();
   if (!moduleIds.length) return;
   const job = await store.call('jobClaim', { moduleIds });
   if (!job) return;

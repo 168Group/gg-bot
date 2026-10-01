@@ -30,6 +30,7 @@ Updated 2026-09-30. Unchecked requirements are unfinished work. The verified fir
 
 ## Deployment acceptance
 
+- [ ] Batch remote worker maintenance and delivery operations and verify a realistic PocketHost traffic budget. The 2026-09-30 incident exposed an idle polling rate above the host's advertised 1,000/hour per-IP cap. Empty-queue short-circuiting and a 30-second PocketHost poll reduce traffic, but source review counts about 960/hour for logging alone (including jobClaim) and 1,080/hour with a second installed module, before extra traffic. Instrument these estimates; generic batching/headroom is requested upstream and gates any PocketHost deployment of the events module. Track host HTTP status/rate-limit errors during live acceptance. A larger host budget is still necessary for busy servers; restart loops do not fix exhausted hourly quotas.
 - [ ] Verify a dedicated Discord test application/guild end to end: OAuth, command registration, membership changes, permissions, Gateway events and delivery. Configure credentials privately.
 - [ ] Upload the PocketHost bundle, configure Secrets, confirm selected PocketBase version and migration startup. Official host capabilities are verified; this account's execution is not.
 - [ ] Build/run the production container images and verify TLS, health probes, restart and graceful shutdown on the selected Node host. Compose manifests parse; container deployment has not run.
@@ -49,7 +50,8 @@ Updated 2026-09-30. Unchecked requirements are unfinished work. The verified fir
 
 ## Current deployment incident
 
-- [ ] Recheck bot health after separate incident recovery. On 2026-09-30 the dashboard was Online and usable, but the PR #4 bot deployment was Crashed after repeated `STORAGE_PROTOCOL` initialization failures (last observed error 17:33 EDT). The base task is investigating PocketHost quota/cooldown handling in an isolated downstream worktree; rate limiting is a leading explanation, not proof of an old 429. Preserve its recovery work and later merge the reviewed downstream main update. This module task does not authorize production deployment.
+- [x] Receive the separate incident recovery result: PR #5 (`df430287`) merged, with HTTP 200 bot/dashboard readiness reported by the base task. The reviewed change is integrated here.
+- [ ] Verify sustained health and the two-module request budget before any future module deployment. On 2026-09-30 the dashboard was Online and usable, but the PR #4 bot deployment was Crashed after repeated `STORAGE_PROTOCOL` initialization failures (last observed error 17:33 EDT). The base task implemented PocketHost quota/cooldown mitigation in an isolated downstream worktree; rate limiting is a leading explanation, not proof of an old 429. Preserve the merged recovery work and verify the additional module polling load. This module task does not authorize production deployment.
 
 ## Explicitly deferred
 

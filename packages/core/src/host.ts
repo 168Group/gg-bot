@@ -114,6 +114,7 @@ export class ModuleHost {
     const next = this.tail.then(operation); this.tail = next.then(() => {}, () => {}); return next;
   }
   activeModuleIds() { return [...this.active]; }
+  activeJobModuleIds() { return this.modules.filter(module => this.active.has(module.manifest.id) && Object.keys(module.jobSchemas ?? {}).length > 0).map(module => module.manifest.id); }
   hasMessageInterest(channelId: string) {
     return [...this.messages].some(([id, m]) => { try { return this.active.has(id) && m.subscription.channelIds().includes(channelId); } catch { this.logger.error(`${id}: channel subscription failed`); return false; } });
   }
