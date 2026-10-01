@@ -9,7 +9,6 @@ export const eventFilter = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50)
 }).strict();
 export class LoggingRepository {
-  collectionSettings: LoggingSettings | null = null;
   constructor(readonly store: GuildStore) {}
   excluded(event: Pick<Observation, 'subjectId' | 'channelId' | 'parentId' | 'before' | 'after' | 'type'>, settings: LoggingSettings): boolean {
     return excludedEvent(event, settings);
