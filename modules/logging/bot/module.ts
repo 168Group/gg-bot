@@ -10,7 +10,6 @@ export function loggingModule(repository: LoggingRepository, validateDestination
     await validateDestination(next.destinationId);
     await repository.apply(next);
     settings = next; revision = nextRevision;
-    repository.collectionSettings = next;
   };
   return { ...loggingDefinition,
     async start(context) {
@@ -30,6 +29,6 @@ export function loggingModule(repository: LoggingRepository, validateDestination
         return `Test queued: ${id}. It expires after five minutes if the worker is offline.`;
       });
     }, applySettings: apply,
-    async stop(reason) { repository.collectionSettings = null; if (reason === 'disabled') await repository.cancelPending(); }
+    async stop(reason) { if (reason === 'disabled') await repository.cancelPending(); }
   };
 }

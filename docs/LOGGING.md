@@ -24,6 +24,8 @@ Discord deletion packets contain IDs rather than deleted content. Old messages, 
 
 Member comparison uses Discord's cached member baseline, loaded at startup. If no baseline exists, the bot records a coverage gap instead of claiming a nickname or role changed. Activity during initialization, downtime or queue overflow cannot be reconstructed. Check Diagnostics for recorded gaps; absence of a gap does not guarantee complete coverage.
 
+Member join and leave alerts are not implemented yet. Roles assigned after an observed join can produce role-change logs. Roles already present in the initial member snapshot are a baseline, not evidence of a subsequent assignment, and are not reported as changes.
+
 ## Exclusions and queued delivery
 
 Channel/category exclusions apply before capture and again before delivery. Message threads also honor exclusions on their parent channel and category when that scope is known. Voice moves are evaluated per channel. Member nickname/role events are guild-wide and have no channel scope.

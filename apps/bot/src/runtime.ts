@@ -13,6 +13,7 @@ import { DeliveryWorker } from '../../../modules/logging/bot/delivery.js';
 import { botRegistry } from '../../../registry/bot.js';
 import { channelData, discordTransport, destinationPermissions } from './discord.js';
 import { ActivityCollector } from '../../../modules/logging/bot/collect.js';
+import type { LoggingSettings } from '../../../modules/logging/shared/settings.js';
 
 export async function startBot(config: Config, token: string) {
   const db = openStorage(config), store = db.scope(config.DISCORD_GUILD_ID);
@@ -39,7 +40,7 @@ export async function startBot(config: Config, token: string) {
   });
   const worker = new DeliveryWorker(repository, transport);
   const activity = new ActivityCollector({
-    guildId: store.guildId, botId: () => client.user?.id, settings: () => repository.collectionSettings,
+    guildId: store.guildId, botId: () => client.user?.id, settings: () => host.activeSettings('logging') as LoggingSettings | null,
     channel(id) {
       const channel = client.channels.cache.get(id);
       if (!channel || !('guild' in channel) || channel.guild.id !== store.guildId) return null;

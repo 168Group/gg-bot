@@ -13,6 +13,7 @@ export class ModuleHost {
   private cleanup = new Map<string, Array<() => void | Promise<void>>>();
   private revisions = new Map<string, number>();
   private active = new Set<string>();
+  private settings = new Map<string, unknown>();
   private modules: BotModule[];
   private pending = 0;
   private pendingBytes = 0;
@@ -70,6 +71,7 @@ export class ModuleHost {
               });
               this.active.add(id);
             }
+            this.settings.set(id, settings);
           } else if (this.active.has(id)) {
             if (this.modules.some(m => this.active.has(m.manifest.id) && m.manifest.dependencies.includes(id))) throw new Error('Disable dependent modules first.');
             await this.dispose(module, 'disabled');
@@ -112,6 +114,8 @@ export class ModuleHost {
     const next = this.tail.then(operation); this.tail = next.then(() => {}, () => {}); return next;
   }
   activeModuleIds() { return [...this.active]; }
+  /** Stable, schema-validated settings accepted by the running module, not merely saved in storage. */
+  activeSettings(moduleId: string): unknown | null { return this.active.has(moduleId) ? this.settings.get(moduleId) ?? null : null; }
   activeJobModuleIds() { return this.modules.filter(module => this.active.has(module.manifest.id) && Object.keys(module.jobSchemas ?? {}).length > 0).map(module => module.manifest.id); }
   hasMessageInterest(channelId: string) {
     return [...this.messages].some(([id, m]) => { try { return this.active.has(id) && m.subscription.channelIds().includes(channelId); } catch { this.logger.error(`${id}: channel subscription failed`); return false; } });
@@ -142,7 +146,7 @@ export class ModuleHost {
       for (const dispose of (this.cleanup.get(id) ?? []).reverse()) {
         try { await dispose(); } catch { this.logger.error(`${id}: cleanup failed`); }
       }
-      this.cleanup.delete(id); this.active.delete(id);
+      this.cleanup.delete(id); this.active.delete(id); this.settings.delete(id);
     }
   }
   stop(): Promise<void> { return this.enqueue(async () => { for (const module of [...this.modules].reverse()) await this.dispose(module, 'shutdown'); }); }
