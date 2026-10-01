@@ -18,7 +18,11 @@ export interface StorageStatus {
 export interface EventFilter { type?: string; subject?: string; cursor?: string; limit: number }
 type Op<I, O> = { input: I; output: O };
 export interface Operations {
-  ready: Op<Record<string, never>, { protocol: 1 }>;
+  ready: Op<Record<string, never>, { protocol: 1; trafficProtocol?: 1 }>;
+  workerPoll: Op<{ moduleIds: string[]; jobModuleIds: string[]; status: string; details: Record<string, unknown> }, { modules: ModuleState[]; jobsDue: boolean; deliveriesDue: number }>;
+  dashboardSnapshot: Op<{ moduleIds: string[] }, { modules: ModuleState[]; status: StorageStatus; events: LogEvent[] }>;
+  deliveryPrepare: Op<Record<string, never>, { delivery: DeliveryClaim; event: LogEvent; module: ModuleState } | null>;
+  deliveryVerify: Op<{ id: string; claimToken: string; revision: number }, boolean>;
   workerVerify: Op<Record<string, never>, null>;
   initialize: Op<{ displayName: string; modules: { id: string; settings: unknown; settingsVersion: number }[] }, null>;
   moduleUpgrade: Op<{ id: string; expected: number; fromVersion: number; toVersion: number; settings: unknown }, ModuleState>;
@@ -42,7 +46,7 @@ export interface Operations {
   jobFinish: Op<{ id: string; claimToken: string; error: string | null; message: string | null }, null>;
   cleanup: Op<Record<string, never>, null>;
   sessionCreate: Op<Omit<SessionRecord, 'checked_at'>, null>;
-  sessionGet: Op<{ hash: string }, SessionRecord | null>;
+  sessionGet: Op<{ hash: string; touch?: boolean }, SessionRecord | null>;
   sessionRefresh: Op<{ hash: string; tokens: string; access: Access }, null>;
   sessionTouch: Op<{ hash: string }, null>;
   sessionDelete: Op<{ hash: string }, null>;

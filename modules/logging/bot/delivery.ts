@@ -1,5 +1,6 @@
 import type { LoggingRepository } from './repository.js';
 import { renderEvent } from './render.js';
+import { loggingSettingsSchema } from '../shared/settings.js';
 import { eventEnabled } from '../shared/policy.js';
 export type DiscordPayload = ReturnType<typeof renderEvent>;
 export interface DeliveryTransport {
@@ -15,17 +16,17 @@ export class DeliveryWorker {
   }
   async tick(): Promise<boolean> {
     const { store } = this.repository;
-    const delivery = await store.call('deliveryClaim', {});
-    if (!delivery) return false;
+    const prepared = await store.call('deliveryPrepare', {});
+    if (!prepared) return false;
+    const { delivery, event, module } = prepared;
     try {
-      const active = await this.repository.activeSettings();
-      const event = await this.repository.detail(delivery.event_id);
+      const active = { enabled: module.enabled && module.appliedEnabled, settings: loggingSettingsSchema.parse(module.appliedSettings) };
       if (!active.enabled || !eventEnabled(event.type, active.settings) || this.repository.excluded(event, active.settings) || active.settings.destinationId !== delivery.destination_id || new Date(event.expiresAt).getTime() <= Date.now()) {
         await store.call('deliveryFinish', { id: delivery.id, claimToken: delivery.claim_token, state: 'cancelled' }); return true;
       }
       await this.transport.validate(delivery.destination_id);
       const existing = delivery.attempts > 1 ? await this.transport.find(delivery.destination_id, delivery.marker) : null;
-      await store.call('workerVerify', {});
+      if (!await store.call('deliveryVerify', { id: delivery.id, claimToken: delivery.claim_token, revision: module.appliedRevision })) throw new Error('Delivery configuration or claim changed.');
       const messageId = existing ?? await this.transport.send(delivery.destination_id, renderEvent(event, delivery.marker, active.settings.accentColor), delivery.marker);
       await store.call('deliveryFinish', { id: delivery.id, claimToken: delivery.claim_token, state: 'sent', messageId });
     } catch (error) {

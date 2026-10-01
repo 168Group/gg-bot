@@ -1,6 +1,6 @@
 # Remaining implementation and deployment
 
-Updated 2026-09-30. Unchecked requirements are unfinished work. The verified first slice is described in [HANDOFF.md](HANDOFF.md).
+Updated 2026-10-01. Unchecked requirements are unfinished work. The verified first slice is described in [HANDOFF.md](HANDOFF.md).
 
 ## Setup follow-through
 
@@ -29,7 +29,8 @@ Updated 2026-09-30. Unchecked requirements are unfinished work. The verified fir
 
 ## Deployment acceptance
 
-- [ ] Batch remote worker maintenance and delivery operations and verify a realistic PocketHost traffic budget. The 2026-09-30 incident exposed an idle polling rate above the host's advertised 1,000/hour per-IP cap. Empty-queue short-circuiting and a 30-second PocketHost poll reduce idle traffic to roughly 960/hour for one logging module, but active delivery, extra modules and dashboard traffic need additional headroom. Track host HTTP status/rate-limit errors during live acceptance. A larger host budget is still necessary for busy servers; restart loops do not fix exhausted hourly quotas.
+- [x] Implement and measure batched worker maintenance, delivery preparation and shared dashboard snapshots on both providers. Local HTTP tests count 325/328 requests for one/two idle modules and 912 for two modules plus 100 changes and one open overview. See docs/POCKETHOST.md for the exact workload and limits.
+- [ ] Deploy request-budget hooks before clients and verify live quota use for a full hour. This requires `ready.trafficProtocol === 1`. Comet access was blocked by the locked Mac; current local tests do not prove live throughput. Larger bursts, more viewers and additional module operations still need a supported higher host budget or self-hosted storage.
 - [ ] Verify a dedicated Discord test application/guild end to end: OAuth, command registration, membership changes, permissions, Gateway events and delivery. Configure credentials privately.
 - [ ] Upload the PocketHost bundle, configure Secrets, confirm selected PocketBase version and migration startup. Official host capabilities are verified; this account's execution is not.
 - [ ] Build/run the production container images and verify TLS, health probes, restart and graceful shutdown on the selected Node host. Compose manifests parse; container deployment has not run.

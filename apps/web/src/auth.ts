@@ -59,7 +59,7 @@ export class Auth {
   async authorize(request: FastifyRequest, mutation = false): Promise<UserSession> {
     const id = request.cookies.omo_session;
     if (!id) throw new HttpError(401, 'UNAUTHENTICATED', 'Sign in with Discord to continue.');
-    const session = await this.store.call('sessionGet', { hash: hash(id) });
+    const session = await this.store.call('sessionGet', { hash: hash(id), touch: true });
     if (!session) throw new HttpError(401, 'SESSION_EXPIRED', 'Your session expired. Sign in again.');
     if (mutation && (request.headers.origin !== this.config.DASHBOARD_ORIGIN || typeof request.headers['x-csrf-token'] !== 'string' || hash(request.headers['x-csrf-token']) !== session.csrf_hash)) {
       throw new HttpError(403, 'CSRF', 'This request could not be verified. Reload and try again.');
@@ -77,7 +77,6 @@ export class Auth {
       }
     }
     if (!access || (mutation && !canMutate(access))) throw new HttpError(403, 'FORBIDDEN', 'Administrator access is required.');
-    await this.store.call('sessionTouch', { hash: session.id_hash });
     return { userId: session.user_id, label: session.label, access, csrf: this.vault.csrf(id), guildId: this.config.DISCORD_GUILD_ID,
       communityName: this.config.COMMUNITY_NAME, botName: this.config.BOT_NAME, demo: this.demo };
   }
