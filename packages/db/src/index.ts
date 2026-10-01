@@ -9,8 +9,11 @@ export { PostgresAdapter as Database } from './postgres-adapter.js';
 export class GuildStore {
   constructor(readonly db: StorageDriver, readonly guildId: string) {}
   call<K extends keyof Operations>(operation: K, input: Operations[K]['input']): Promise<Operations[K]['output']> { return this.db.call(this.guildId, operation, input); }
-  async ready() { await this.call('ready', {}); }
-  async initialize(displayName: string, modules: ModuleDefinition[]) { await this.call('initialize', { displayName, modules: modules.map(m => ({ id: m.manifest.id, settings: m.defaultSettings, settingsVersion: m.manifest.settingsVersion })) }); for (const module of modules) await upgradeSettings(this, module); }
+  async ready() {
+    const status = await this.call('ready', {});
+    if (status?.trafficProtocol !== 1) throw new Error('Update the PocketBase storage hooks before starting this version (traffic protocol 1 required).');
+  }
+  async initialize(displayName: string, modules: ModuleDefinition[]) { await this.ready(); await this.call('initialize', { displayName, modules: modules.map(m => ({ id: m.manifest.id, settings: m.defaultSettings, settingsVersion: m.manifest.settingsVersion })) }); for (const module of modules) await upgradeSettings(this, module); }
   resources(moduleId: string) { return moduleResources(this, moduleId); }
   getModule(id: string) { return this.call('moduleGet', { id }); }
   updateModule(id: string, expected: number, actor: string, change: { settings?: unknown; enabled?: boolean }) { return this.call('moduleUpdate', { id, expected, actor, change }); }

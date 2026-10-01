@@ -1,3 +1,4 @@
+import type { ModuleState } from '../../module-sdk/src/browser.js';
 import { moduleSecretKey } from './module-secrets.js';
 import type { BotModule, Logger, ModuleConfigurationStore, Observation, CommandContext, ModuleJob, ModuleMessage, MessageSubscription } from '../../module-sdk/src/server.js';
 import { commandAllowed, commandDefinitions } from './module-commands.js';
@@ -26,9 +27,11 @@ export class ModuleHost {
     this.tail = next.catch(() => {});
     return next;
   }
-  sync(): Promise<void> {
+  sync(load?: () => Promise<ModuleState[]>): Promise<void> {
     return this.enqueue(async () => {
-      const states = new Map(await Promise.all(this.modules.map(async m => [m.manifest.id, await this.store.getModule(m.manifest.id)] as const)));
+      const loaded = load ? await load() : await Promise.all(this.modules.map(m => this.store.getModule(m.manifest.id)));
+      const states = new Map(loaded.map(state => [state.moduleId, state]));
+      if (this.modules.some(m => !states.has(m.manifest.id))) throw new Error('Storage snapshot is missing an installed module.');
       const ordered = [...this.modules].reverse().filter(m => !states.get(m.manifest.id)!.enabled).concat(this.modules.filter(m => states.get(m.manifest.id)!.enabled));
       for (const module of ordered) {
         const id = module.manifest.id;

@@ -1,6 +1,6 @@
 # Verification record
 
-Updated 2026-09-30. Pinned environment: Node 24.21.0, pnpm 10.34.5, PocketBase 0.40.4 and PostgreSQL 17.10.0. No production credentials or real Discord account were used.
+Updated 2026-10-01. Pinned environment: Node 24.21.0, pnpm 10.34.5, PocketBase 0.40.4 and PostgreSQL 17.10.0. No production credentials or real Discord account were used.
 
 ## Foundation results
 
@@ -47,3 +47,15 @@ PocketBase startup tests intercept attempted browser commands and verify the com
 ## Limits
 
 Passing tests do not establish exactly-once external delivery, full event-family coverage, live Discord/PocketHost permissions, hosted latency, container operation, TLS, load recovery or backup restoration. Version-aware upgrades of existing remote bundles, cross-provider transfers, installation-directory locking and durable setup-job recovery remain incomplete. See ROADMAP.md and SETUP.md.
+
+## PocketHost request-budget release
+
+Baseline before edits: typecheck, lint, 63 unit tests, 64 integration tests and production build passed. After implementation, typecheck, lint, 68 unit tests, 70 integration tests, production/fixture builds, 12 desktop/mobile browser tests and the PocketHost bundle pass. No live credentials or Discord sends were used for these checks.
+
+The new request harness drives the actual PocketBase adapter, independent lease timer, ModuleHost, WorkerCycle, logging worker and Fastify/Auth with simulated time and HTTP responses. It counts every serialized request in that workload, including startup and shutdown. Results: 325 requests for one idle module, 328 for two, and 912 for two plus 100 changes and 60 authenticated workspace loads. The active workload peaks at 27 requests/10 seconds. This is not an actual hosted one-hour load test; independent real-provider tests establish queue, session and storage behavior.
+
+Real PostgreSQL/PocketBase regressions cover combined module/heartbeat snapshots, due/delayed/expired jobs, no premature claiming, event/config preparation, stale claim tokens, settings disable during Discord validation, session touch without reviving expiry, protected workspace access and revoked membership. PocketBase ownership tests fence the new worker operations. Unit tests also cover old-hook refusal and late successful renewal arriving after the local deadline.
+
+Browser tests verify a single shared workspace request on load, one request per accelerated minute for three minutes despite multiple mounted consumers, explicit refresh, and preservation of dirty logging drafts. Full fixture flows still pass for logging, modules and setup. Reviewed mobile screenshot: `test-results/workspace-budget-mobile.png`; desktop equivalent is also available locally. These are ignored artifacts.
+
+Only operations.js needs replacement on the hosted instance; migrations are unchanged. Bundle manifest includes trafficProtocol 1 and file SHA-256 hashes. Comet reported the Mac locked, so live hook upload, client deployment and sustained hosted quota observation remain pending. Do not deploy current clients against old hooks.

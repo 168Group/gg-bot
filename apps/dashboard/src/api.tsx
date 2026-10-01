@@ -1,5 +1,7 @@
 import { createContext, useContext } from 'react';
-import type { UserSession } from '../../../packages/module-sdk/src/browser.js';
+import { useQuery } from '@tanstack/react-query';
+import type { LogEvent } from '../../../modules/logging/shared/settings.js';
+import type { ModuleInventory, UserSession } from '../../../packages/module-sdk/src/browser.js';
 export const SessionContext = createContext<UserSession | null>(null);
 export function useSession(): UserSession { const session = useContext(SessionContext); if (!session) throw new Error('Session required.'); return session; }
 export class ApiError extends Error { constructor(message: string, public status: number) { super(message); } }
@@ -17,4 +19,10 @@ export interface Status {
   queue: { state: string; count: number; oldest: string }[];
   incidents: { id: string; started_at: string; reason: string; dropped_count: number | null }[];
   eventCount: number; capabilities: Record<string, boolean>;
+}
+
+export interface Workspace { user: UserSession; modules: ModuleInventory[]; status: Status; events: LogEvent[] }
+export const workspaceQueryKey = ['workspace'];
+export function useWorkspace() {
+  return useQuery({ queryKey: workspaceQueryKey, queryFn: () => api<Workspace>('/api/workspace'), staleTime: 60000, refetchInterval: 60000, refetchOnWindowFocus: false });
 }

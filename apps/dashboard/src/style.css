@@ -305,3 +305,5 @@ to{opacity:1;transform:translateY(0)}
 .log-preview-field{min-width:0}.log-preview-field[data-inline="false"]{grid-column:1/-1}
 .log-preview .log-preview-field p{margin:5px 0 0}.log-preview-mention{color:#cfb6ff;background:#a878f020;padding:1px 3px;border-radius:3px}
 .log-preview>small{font-size:10px;line-height:1.5;color:var(--muted)}
+
+.workspace-refresh{display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:20px;font-size:12px;color:var(--muted)}
