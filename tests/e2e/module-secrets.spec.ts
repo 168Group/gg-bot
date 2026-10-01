@@ -1,0 +1,67 @@
+import { test, expect } from '@playwright/test';
+
+test('owners edit masked module secrets and reveal only deliberately with automatic clearing', async ({ page }) => {
+  await page.clock.install();
+  const value = `synthetic-browser-key-${test.info().project.name}`;
+  let reveals = 0;
+  page.on('request', request => { if (request.url().endsWith('/reveal')) reveals++; });
+  await page.goto('/auth/demo');
+  await page.getByRole('link', { name: /^Modules/ }).click();
+  const card = page.locator('article').filter({ has: page.getByRole('heading', { name: 'Example module', exact: true }) });
+  await card.getByRole('button', { name: 'Manage secrets' }).click();
+  const input = card.getByLabel('Replace API_KEY'), output = card.getByLabel('API_KEY value');
+  await expect(input).toHaveAttribute('type', 'password');
+  for (const button of await card.locator('.module-secrets button').all()) await expect(button).toHaveAttribute('type', 'button');
+  await expect(input).toBeEmpty(); expect(reveals).toBe(0);
+  await input.fill(value);
+  await card.getByRole('button', { name: 'Save secret', exact: true }).click();
+  await expect(card.getByText('Secret saved. The next job will read the new value.')).toBeVisible();
+  await expect(input).toBeEmpty(); await expect(output).toHaveText('••••••••');
+  expect(reveals).toBe(0); expect(await page.content()).not.toContain(value);
+  const metadata = await page.request.get('/api/module-secrets/example');
+  expect(metadata.status()).toBe(200); expect(await metadata.text()).not.toContain(value);
+  await card.getByRole('button', { name: 'Show', exact: true }).click();
+  await expect(output).toHaveText(value); expect(reveals).toBe(1);
+  await card.getByRole('button', { name: 'Hide', exact: true }).click();
+  await expect(output).toHaveText('••••••••'); expect(await page.content()).not.toContain(value);
+  await card.getByRole('button', { name: 'Show', exact: true }).click(); await expect(output).toHaveText(value);
+  await page.clock.runFor(30001); await expect(output).toHaveText('••••••••');
+  await card.getByRole('button', { name: 'Show', exact: true }).click(); await expect(output).toHaveText(value);
+  await page.getByRole('link', { name: 'Overview', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Your community, at a glance.' })).toBeVisible();
+  expect(await page.content()).not.toContain(value);
+  await page.getByRole('link', { name: /^Modules/ }).click();
+  await card.getByRole('button', { name: 'Manage secrets' }).click(); await expect(output).toHaveText('••••••••');
+  await card.getByRole('button', { name: 'Delete and disable' }).click();
+  await expect(card.getByText('Secret disabled. An environment value will not be used.')).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Show', exact: true })).toHaveCount(0);
+  await card.getByRole('button', { name: 'Use environment' }).click();
+  await expect(card.getByText('Bot environment · availability unknown')).toBeVisible();
+  expect(await page.evaluate(() => JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } }))).not.toContain(value);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= (visualViewport?.width ?? innerWidth) + 1)).toBe(true);
+  await page.screenshot({ path: `test-results/module-secret-${test.info().project.name}.png`, fullPage: true });
+});
+
+test('closing a secret control discards a late reveal response', async ({ page }) => {
+  let deliver: (() => Promise<void>) | undefined;
+  await page.route('**/api/module-secrets/example', route => route.fulfill({ json: { data: [{ name: 'API_KEY', source: 'stored', configured: true, canReveal: true, revision: 1 }] } }));
+  await page.route('**/api/module-secrets/example/API_KEY/reveal', async route => {
+    await new Promise<void>(resolve => { deliver = async () => { await route.fulfill({ json: { data: { value: 'synthetic-late-reveal' } } }); resolve(); }; });
+  });
+  await page.goto('/auth/demo'); await page.getByRole('link', { name: /^Modules/ }).click();
+  const card = page.locator('article').filter({ has: page.getByRole('heading', { name: 'Example module', exact: true }) });
+  await card.getByRole('button', { name: 'Manage secrets' }).click();
+  await card.getByRole('button', { name: 'Show', exact: true }).click();
+  await expect.poll(() => Boolean(deliver)).toBe(true);
+  await card.getByRole('button', { name: 'Hide', exact: true }).click();
+  await deliver!();
+  await expect(card.getByLabel('API_KEY value')).toHaveText('••••••••');
+  expect(await page.content()).not.toContain('synthetic-late-reveal');
+  deliver = undefined;
+  await card.getByRole('button', { name: 'Show', exact: true }).click();
+  await expect.poll(() => Boolean(deliver)).toBe(true);
+  await card.getByRole('button', { name: 'Close secrets' }).click();
+  await deliver!();
+  await expect(card.getByLabel('API_KEY value')).toHaveCount(0);
+  expect(await page.content()).not.toContain('synthetic-late-reveal');
+});

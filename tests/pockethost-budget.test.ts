@@ -57,7 +57,7 @@ async function workload(moduleCount: number, changes: number, dashboard: boolean
     calls[name] = (calls[name] ?? 0) + 1; times.push(Date.now());
     let data: unknown = null;
     switch (name) {
-      case 'ready': data = { protocol: 1, trafficProtocol: 1 }; break;
+      case 'ready': data = { protocol: 1, trafficProtocol: 1, secretsProtocol: 1 }; break;
       case 'initialize': for (const module of input.modules) if (!states.has(module.id)) states.set(module.id, {
         moduleId: module.id, settingsVersion: module.settingsVersion, enabled: module.id === 'logging', appliedEnabled: module.id === 'logging',
         settings: module.id === 'logging' ? settings : module.settings, appliedSettings: module.id === 'logging' ? settings : module.settings,

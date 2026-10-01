@@ -26,6 +26,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
+      MODULE_SECRET_ENCRYPTION_KEY: ${MODULE_SECRET_ENCRYPTION_KEY:-}
       STORAGE_PROVIDER: postgres
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
       DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:?Set DISCORD_GUILD_ID}
@@ -47,6 +48,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
+      MODULE_SECRET_ENCRYPTION_KEY: ${MODULE_SECRET_ENCRYPTION_KEY:-}
       STORAGE_PROVIDER: postgres
       WEB_HOST: 0.0.0.0
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}

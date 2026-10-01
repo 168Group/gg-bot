@@ -12,10 +12,18 @@ Updated 2026-10-01. Unchecked requirements are unfinished work. The verified fir
 
 ## Development tooling follow-up
 
+- [ ] Integrate the requested upstream static-asset rate-limit fix. The expanded 22-case local browser suite returned HTTP 429 for JavaScript chunks and a font during mobile logging navigation, causing a failed dynamic import. Assets currently share the 120/minute page bucket. Preserve auth/API limits when separating asset traffic. The secret controls themselves pass on both viewports; see docs/VERIFICATION.md.
+
 - The events foundation browser rerun on 2026-09-30 again hit the documented lease-expiry startup failure. Process inspection identified the failed run’s orphaned local PocketBase child; it was stopped before retrying, without bypassing worker ownership.
 
 - The demo restart/lease issue below was reproduced again during the 2026-09-29 channel-formatting preview rerun. A successful full browser suite followed by an immediate second run failed before tests with the same worker-lock error and left a PocketBase test child on port 8092. This remains separate from the logging renderer fix.
 - [ ] Harden demo shutdown/restart after a terminal process-group interruption. During the theme review, two restarts of `.local/demo-pocketbase` failed at `scripts/demo.ts:21` with `Another bot worker already holds this guild lock.` after the previous demo was stopped. Process inspection found no remaining demo/PocketBase process. An isolated `.local/theme-preview` database started normally. The module verification also reproduced a startup failure leaving an orphaned PocketBase child on port 8092; stopping that confirmed test child and allowing lease expiry restored startup. Reproduce signal ordering, failed-start cleanup and lease expiry before changing the ownership logic; do not bypass the worker lock.
+
+## Module credentials
+
+- [x] Implement generic declared-module encrypted storage, owner editor/reveal controls and async next-job lookup on both providers. See docs/MODULE_SECRETS.md.
+- [ ] Complete the separately authorized downstream rollout after schema/hook upgrades and matching bot/web encryption keys. Current request explicitly excludes production deployment.
+- [ ] Add encryption-key rewrap/rotation tooling with verified recovery. Replacing an API credential is supported now; changing the server encryption key does not migrate existing ciphertext.
 
 ## Next implementation slices
 
@@ -45,7 +53,7 @@ Updated 2026-10-01. Unchecked requirements are unfinished work. The verified fir
 - [x] Establish gg-bot identity, upstream boundaries, scaffolded module and fixture-only foundation. Scoped refresh jobs, preview dedupe, upcoming browsing and safe staff drafts use existing SDK capabilities. See modules/gottagacha-events/README.md.
 - [x] Establish the read contract from the supplied events API guide: fixed v1 GET, bearer read scope, private bookings included, venue-local times, recurrence expansion and occurrence identity, pre-expansion limit semantics and cancellation absence. Public OpenAPI omits privacy fields; require them explicitly. Test keys share the live database. Member API/RSVP integration is deferred; uncertain-create reconciliation remains unresolved.
 - [x] Implement manual API read-only refresh through scoped jobs and declared bot secrets, with strict privacy validation, seven-day window, bounded bytes/occurrences, body deadlines, read retries, persisted cooldown and a five-minute public cache. No automatic polling or live sends. Local adapter/host/provider/browser verification is recorded in docs/VERIFICATION.md; credentialed API acceptance remains outstanding.
-- [ ] Integrate reusable encrypted module-secret management from OMOBot: owner-only dashboard save/replace, masked status by default, explicit Show/Hide with short-lived reveal, and updated credentials used by the next worker job. Current module secrets are environment-only; the dashboard cannot save or reveal them yet. Generic vault/API/UI support has been requested upstream. Never store plaintext in normal module settings or records.
+- [x] Integrate merged OMOBot encrypted module-secret management: owner-only save/replace, masked status, explicit timed Show/Hide and deletion with disabled environment fallback. Events resolve the current key per job; the direct events-page control reuses the generic panel. Storage migration, matching hooks/capability and shared bot/web encryption key remain deployment prerequisites.
 - [ ] Integrate reviewed, merged upstream scoped announcement delivery/reconciliation. Current SDK cannot send arbitrary module announcements; a substantive request is outstanding with the base task and tracked locally. Current previews never send and their seven-day dedupe is not a production delivery ledger.
 - [ ] Add Discord-native RSVP later, using verified Discord member identity and scoped occurrence records. This is deferred and does not block event browsing or announcement work. No GottaGacha member/RSVP API integration is planned now; revisit its contract only if cross-system synchronization is requested.
 - [ ] Expand labeled text drafts into the agreed plain-language parser after field semantics are known. Require exact revision review, expiring explicit confirmation, fresh staff authorization and idempotent create reconciliation before any write. Current drafts are review-only and expire after 24 hours.

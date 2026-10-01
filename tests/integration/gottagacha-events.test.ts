@@ -13,6 +13,7 @@ import { refreshFixtures } from '../../modules/gottagacha-events/service.js';
 import { saveDraft } from '../../modules/gottagacha-events/drafts.js';
 import { runModuleJobs } from '../../packages/core/src/jobs.js';
 import { eventWindow, type LiveSnapshot } from '../../modules/gottagacha-events/live-model.js';
+import type { EventReader } from '../../modules/gottagacha-events/live-service.js';
 const guild = '100000000000000001', owner = '100000000000000002', channel = '100000000000000010', viewerRole = '100000000000000004';
 const moduleId = definition.manifest.id;
 describe.each(['postgres', 'pocketbase'] as const)('GottaGacha events with %s', provider => {
@@ -24,6 +25,45 @@ describe.each(['postgres', 'pocketbase'] as const)('GottaGacha events with %s', 
     release = await driver.singleton(guild, () => {});
   });
   afterAll(async () => { await release?.(); await driver?.close(); await pg?.stop(); await pb?.stop(); });
+  it('reads a fresh stored secret for each refresh and honors disablement over the environment', async () => {
+    const store = driver.scope(guild), data = store.resources(moduleId).data;
+    const environment = `gg_test_${'a'.repeat(64)}`, first = `gg_test_${'b'.repeat(64)}`, second = `gg_test_${'c'.repeat(64)}`;
+    vi.stubEnv('MODULE_SECRET_ENCRYPTION_KEY', 'd'.repeat(64));
+    vi.stubEnv('OMO_MODULE_GOTTAGACHA_EVENTS_GG_API_KEY', environment);
+    const read = vi.fn<EventReader>().mockResolvedValue({ events: [], publicOccurrenceCount: 0, truncated: false });
+    const host = new ModuleHost(guild, [createBot({ store, validateDestination: async () => {} }, read)], store, { info() {}, error() {} });
+    const secrets = store.secrets(definition);
+    const refresh = async () => {
+      // Open the persisted cooldown between independent test jobs; cooldown semantics have separate coverage.
+      const cached = await data.get<LiveSnapshot>('api-snapshot');
+      if (cached) await data.put('api-snapshot', { ...cached.value, nextRefreshAt: 0 }, cached.revision);
+      const state = await store.getModule(moduleId);
+      const id = await store.resources(moduleId).jobs.enqueue('refresh-api', { revision: state.appliedRevision }, crypto.randomUUID());
+      await runModuleJobs(store, host);
+      return store.call('jobGet', { id });
+    };
+    try {
+      const initial = await store.getModule(moduleId);
+      await store.updateModule(moduleId, initial.desiredRevision, owner, { enabled: true, settings: { mode: 'api-readonly', staffChannelIds: [] } });
+      let metadata = await secrets.replace('GG_API_KEY', 0, first);
+      await host.sync(); expect(read).not.toHaveBeenCalled();
+      expect((await refresh())?.state).toBe('completed'); expect(read.mock.calls[0]?.[0]).toBe(first);
+      metadata = await secrets.replace('GG_API_KEY', metadata.revision, second);
+      expect((await refresh())?.state).toBe('completed'); expect(read.mock.calls[1]?.[0]).toBe(second);
+      metadata = await secrets.disable('GG_API_KEY', metadata.revision);
+      expect((await refresh())?.state).toBe('failed'); expect(read).toHaveBeenCalledTimes(2);
+      expect((await data.get<LiveSnapshot>('api-snapshot'))!.value).toMatchObject({ state: 'unavailable', events: [] });
+      metadata = await secrets.replace('GG_API_KEY', metadata.revision, 'invalid-format');
+      expect((await refresh())?.state).toBe('failed'); expect(read).toHaveBeenCalledTimes(2);
+      await secrets.environment('GG_API_KEY', metadata.revision);
+      expect((await refresh())?.state).toBe('completed'); expect(read.mock.calls[2]?.[0]).toBe(environment);
+      const stored = JSON.stringify({ state: await store.getModule(moduleId), records: await data.list({ limit: 100 }) });
+      for (const value of [environment, first, second, 'invalid-format']) expect(stored).not.toContain(value);
+    } finally {
+      await host.stop(); vi.unstubAllEnvs();
+      const cached = await data.get('api-snapshot'); if (cached) await data.delete('api-snapshot', cached.revision);
+    }
+  });
   it('persists dedupe through a new module instance, scopes records and expires drafts', async () => {
     const store = driver.scope(guild), data = store.resources(moduleId).data;
     expect(await refreshFixtures(data)).toBe(3);
@@ -86,9 +126,14 @@ describe.each(['postgres', 'pocketbase'] as const)('GottaGacha events with %s', 
       const fixtures = await store.getModule(moduleId);
       await store.updateModule(moduleId, fixtures.desiredRevision, owner, { settings: { mode: 'api-readonly', staffChannelIds: [] } });
       await host.sync();
-      expect((await store.getModule(moduleId)).applyError).toContain('secret');
+      expect((await store.getModule(moduleId)).applyError).toBeNull();
       expect((await app.inject({ url: `${root}/api-snapshot`, ...session })).json().data).toBeNull();
-      expect((await app.inject({ url: `${root}/refresh-api`, method: 'POST', ...session, payload: { key: crypto.randomUUID() } })).statusCode).toBe(409);
+      const missing = await app.inject({ url: `${root}/refresh-api`, method: 'POST', ...session, payload: { key: crypto.randomUUID() } });
+      expect(missing.statusCode).toBe(202); await runModuleJobs(store, host);
+      expect((await store.call('jobGet', { id: missing.json().data.id }))?.state).toBe('failed');
+      const unavailable = (await store.resources(moduleId).data.get<LiveSnapshot>('api-snapshot'))!;
+      expect(unavailable.value).toMatchObject({ state: 'unavailable', events: [] });
+      await store.resources(moduleId).data.put('api-snapshot', { ...unavailable.value, nextRefreshAt: 0 }, unavailable.revision);
       vi.stubEnv('OMO_MODULE_GOTTAGACHA_EVENTS_GG_API_KEY', apiKey);
       await host.sync();
       expect((await store.getModule(moduleId)).applyError).toBeNull();

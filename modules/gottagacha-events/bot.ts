@@ -1,6 +1,6 @@
 import type { BotModule, BotModuleContext } from '../../packages/module-sdk/src/server.js';
 import type { ModulePackageServices } from '../../packages/core/src/module-package.js';
-import { API_KEY_PATTERN } from './client.js';
+import { API_KEY_PATTERN, EventReadError, fetchEvents } from './client.js';
 import { refreshLive, type EventReader } from './live-service.js';
 import { liveView, venueTime, type LiveSnapshot } from './live-model.js';
 import { definition, settingsSchema } from './definition.js';
@@ -8,23 +8,18 @@ import { eventTime, upcoming, type FixtureSnapshot } from './fixtures.js';
 import { refreshFixtures } from './service.js';
 import { renderDraft, saveDraft, type Draft } from './drafts.js';
 
-export function createBot(services: ModulePackageServices, reader?: EventReader): BotModule {
-  let storedContext: BotModuleContext | undefined, apiKey = '';
+export function createBot(services: ModulePackageServices, reader: EventReader = fetchEvents): BotModule {
   const display = (value: string) => value.replace(/[\r\n\t]/g, ' ').replace(/([*_~`>|[\]\\])/g, '\\$1');
   let settings = settingsSchema.parse(definition.defaultSettings), revision = 0;
   const apply = async (input: unknown, nextRevision: number) => {
     const next = settingsSchema.parse(input);
     if (next.mode === 'fixtures') for (const channelId of next.staffChannelIds) await services.validateDestination(channelId);
-    const nextKey = next.mode === 'api-readonly' ? storedContext!.secret('GG_API_KEY') : '';
-    if (next.mode === 'api-readonly' && !API_KEY_PATTERN.test(nextKey)) throw new Error('Configure a valid GG_API_KEY module secret on the bot service.');
-    settings = next; revision = nextRevision; apiKey = nextKey;
+    settings = next; revision = nextRevision;
   };
   const requireFixtures = () => { if (settings.mode !== 'fixtures') throw new Error('Choose fixture mode first. The live API is not connected.'); };
   return {
     ...definition,
-    async start(startContext: BotModuleContext) {
-      storedContext = startContext;
-      const context = startContext;
+    async start(context: BotModuleContext) {
       await apply(context.settings, context.revision);
       context.onJob('refresh-fixtures', async job => {
         requireFixtures();
@@ -36,7 +31,14 @@ export function createBot(services: ModulePackageServices, reader?: EventReader)
       context.onJob('refresh-api', async job => {
         if (settings.mode !== 'api-readonly') throw new Error('Choose API read-only mode first.');
         if (definition.jobSchemas['refresh-api'].parse(job.payload).revision !== revision) throw new Error('Settings changed. Request a new API refresh.');
-        const result = await refreshLive(context.data, apiKey, revision, job.id, reader);
+        const result = await refreshLive(context.data, revision, job.id, async window => {
+          // Resolve only after the cache is invalidated and the refresh is claimed. Never retain a key between jobs.
+          let key: string;
+          try { key = await context.secrets.get('GG_API_KEY'); }
+          catch { throw new EventReadError('auth', 'The API key is unavailable. Ask an owner to check Manage secrets and the server encryption configuration.'); }
+          if (!API_KEY_PATTERN.test(key)) throw new EventReadError('auth', 'The API key has an unsupported format. Ask an owner to replace it in Manage secrets.');
+          return reader(key, window);
+        });
         if (result.state !== 'ready') throw new Error(result.message);
         return `API refresh complete. ${result.events.length} public occurrences cached. No announcements or writes were made.`;
       });
@@ -68,6 +70,6 @@ export function createBot(services: ModulePackageServices, reader?: EventReader)
       });
     },
     applySettings: apply,
-    async stop() { settings = settingsSchema.parse(definition.defaultSettings); revision = 0; apiKey = ''; storedContext = undefined; }
+    async stop() { settings = settingsSchema.parse(definition.defaultSettings); revision = 0; }
   };
 }

@@ -37,7 +37,9 @@ export interface BotModuleContext extends ModuleResources {
   onCommand(name: string, handler: (context: CommandContext) => Promise<string>): void;
   onJob(type: string, handler: (job: ModuleJob) => Promise<string>): void;
   onMessage(subscription: MessageSubscription, handler: (message: ModuleMessage) => Promise<void>): void;
+  /** Legacy environment-only lookup. Use secrets.get for dashboard-managed credentials. */
   secret(name: string): string;
+  secrets: { get(name: string): Promise<string> };
   track(disposer: () => void | Promise<void>): void;
 }
 export interface BotModule extends ModuleDefinition {
@@ -47,6 +49,7 @@ export interface BotModule extends ModuleDefinition {
 }
 export interface ModuleConfigurationStore {
   getModule(id: string): Promise<ModuleState>;
+  secrets?(module: ModuleDefinition): { get(name: string): Promise<string> };
   resources?(moduleId: string): ModuleResources;
   acknowledge(id: string, state: ModuleState): Promise<void>;
   reject(id: string, revision: number, message: string): Promise<void>;

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CalendarDays, RefreshCw } from 'lucide-react';
 import { api, useSession, useWorkspace, workspaceQueryKey } from '../../apps/dashboard/src/api.js';
+import { ModuleSecretsPanel } from '../../apps/dashboard/src/ModuleSecrets.js';
 import { SectionTitle, Notice, Badge, Empty } from '../../packages/ui/src/index.js';
 import type { CatalogChannel } from '../../packages/module-sdk/src/browser.js';
 import type { ModuleRecord } from '../../packages/module-sdk/src/services.js';
@@ -35,12 +36,13 @@ export default function EventsPage() {
   return <div className="gg-events">
     <SectionTitle eyebrow="GOTTAGACHA / EVENTS" title="A little more to look forward to." description="Help your community find its next gathering. Browse public events or explore a safe preview." action={<Badge tone="warn">{apiMode ? 'API read-only' : fixtureMode ? 'Fixture preview' : 'Not connected'}</Badge>}/>
     <Notice>{apiMode ? "Read-only API mode. Private bookings are filtered before caching. No event writes or announcements are enabled." : "Fixture previews use sample data only. Select API read-only mode to browse public GottaGacha events after configuring the bot secret."}</Notice>
+    {user.access === 'owner' && <section className="panel settings-form"><div className="panel-heading"><h2>API key</h2><Badge>Owner access</Badge></div><p>Add a GottaGacha key with events:read access. It stays hidden until you choose Show. A replacement is used by the next event refresh.</p><ModuleSecretsPanel moduleId={definition.manifest.id}/></section>}
     <div className="configuration-grid">
       <form className="panel settings-form" onSubmit={event => { event.preventDefault(); save.mutate(); }}>
         <div className="panel-heading"><h2>Set the stage.</h2><CalendarDays size={22}/></div>
         <fieldset disabled={!admin || !revision || save.isPending}>
           <label>Event source<select value={settings.mode} onChange={event => edit({ mode: event.target.value as EventSettings['mode'] })}><option value="disconnected">Not connected</option><option value="fixtures">Fixture preview</option><option value="api-readonly">GottaGacha API (read-only)</option></select></label>
-          {settings.mode === 'api-readonly' && <Notice>Configure OMO_MODULE_GOTTAGACHA_EVENTS_GG_API_KEY privately on the bot service with events:read scope. Never paste the key here. Test keys access the same database as live keys.</Notice>}
+          {settings.mode === 'api-readonly' && <Notice>{user.access === 'owner' ? 'Use Manage secrets above to configure a key with events:read access.' : 'Ask an owner to configure a key with events:read access.'} Keys are checked when you refresh events. Test keys access the same database as live keys.</Notice>}
           <h3>Staff draft channels</h3><p>In fixture mode, administrators can create review-only drafts here. Choose private staff channels.</p>
           {channels.data?.filter(channel => channel.type === 0).map(channel => <label className="check-row" key={channel.id}><input type="checkbox" checked={settings.staffChannelIds.includes(channel.id)} disabled={!channel.canSend} onChange={event => edit({ staffChannelIds: event.target.checked ? [...settings.staffChannelIds, channel.id] : settings.staffChannelIds.filter(id => id !== channel.id) })}/><span>#{channel.name}{!channel.canSend && ' (unavailable)'}</span></label>)}
           {!channels.data?.length && <p>Connect the bot to load available channels.</p>}

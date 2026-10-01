@@ -1,8 +1,8 @@
 import type { ModuleData } from '../../packages/module-sdk/src/services.js';
-import { fetchEvents, EventReadError, type EventReadResult } from './client.js';
+import { EventReadError, type EventReadResult } from './client.js';
 import { eventWindow, FRESHNESS_MS, liveView, type EventWindow, type LiveSnapshot } from './live-model.js';
 export type EventReader = (key: string, window: EventWindow) => Promise<EventReadResult>;
-export async function refreshLive(data: ModuleData, key: string, revision: number, jobId: string, reader: EventReader = fetchEvents, now = Date.now) {
+export async function refreshLive(data: ModuleData, revision: number, jobId: string, reader: (window: EventWindow) => Promise<EventReadResult>, now = Date.now) {
   const previous = await data.get<LiveSnapshot>('api-snapshot'), started = now();
   if (previous?.value.jobId === jobId && previous.value.state !== 'refreshing') return liveView(previous.value, revision, started);
   if (previous && previous.value.nextRefreshAt > started) throw new Error('An API refresh is cooling down. Wait before requesting another.');
@@ -12,7 +12,7 @@ export async function refreshLive(data: ModuleData, key: string, revision: numbe
   const claimed = await data.put('api-snapshot', initial, previous?.revision ?? 0);
   let final: LiveSnapshot;
   try {
-    const result = await reader(key, initial.window), finished = now();
+    const result = await reader(initial.window), finished = now();
     final = { ...initial, ...result, state: 'ready', refreshedAt: new Date(finished).toISOString(), freshUntil: finished + FRESHNESS_MS, nextRefreshAt: finished + 60_000,
       message: result.truncated ? 'Showing a bounded selection of public occurrences returned by the API.' : 'Public events returned for the upcoming week. Times are local to Warren.' };
   } catch (error) {

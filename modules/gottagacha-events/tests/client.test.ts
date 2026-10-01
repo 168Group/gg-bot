@@ -79,26 +79,26 @@ describe('documented v1 event reads', () => {
 describe('live cache boundary', () => {
   it('fences concurrent refreshes, persists cooldown/replay, and hides stale or wrong-revision snapshots', async () => {
     const { data, records } = memory(); const reader = vi.fn(async () => projectResponse(body(), window));
-    await refreshLive(data, key, 2, 'job-1', reader, () => now);
-    await refreshLive(data, key, 2, 'job-1', reader, () => now);
-    await expect(refreshLive(data, key, 2, 'job-2', reader, () => now)).rejects.toThrow('cooling down');
+    await refreshLive(data, 2, 'job-1', reader, () => now);
+    await refreshLive(data, 2, 'job-1', reader, () => now);
+    await expect(refreshLive(data, 2, 'job-2', reader, () => now)).rejects.toThrow('cooling down');
     expect(reader).toHaveBeenCalledOnce();
     const saved = records.get('api-snapshot')!.value as LiveSnapshot;
     expect(liveView(saved, 2, now + FRESHNESS_MS).events).toEqual([]); expect(liveView(saved, 3, now).events).toEqual([]);
     expect(JSON.stringify(saved)).not.toContain(key); expect(JSON.stringify(saved)).not.toContain('description');
     const other = memory();
-    const results = await Promise.allSettled([refreshLive(other.data, key, 2, 'a', reader, () => now), refreshLive(other.data, key, 2, 'b', reader, () => now)]);
+    const results = await Promise.allSettled([refreshLive(other.data, 2, 'a', reader, () => now), refreshLive(other.data, 2, 'b', reader, () => now)]);
     expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1);
   });
   it('invalidates old public events before fetching and persists sanitized failure/cooldown', async () => {
     const { data, records } = memory();
-    await refreshLive(data, key, 2, 'first', async () => projectResponse(body(), window), () => now);
+    await refreshLive(data, 2, 'first', async () => projectResponse(body(), window), () => now);
     const reader = async () => {
       expect((records.get('api-snapshot')!.value as LiveSnapshot).events).toEqual([]);
       throw new EventReadError('rate-limit', 'Rate limited.', now + 500_000);
     };
-    const failed = await refreshLive(data, key, 2, 'next', reader, () => now + 60_001);
+    const failed = await refreshLive(data, 2, 'next', reader, () => now + 60_001);
     expect(failed.state).toBe('unavailable'); expect(failed.events).toEqual([]); expect(failed.nextRefreshAt).toBe(now + 500_000);
-    await expect(refreshLive(data, key, 3, 'new-settings', reader, () => now + 80_000)).rejects.toThrow('cooling down');
+    await expect(refreshLive(data, 3, 'new-settings', reader, () => now + 80_000)).rejects.toThrow('cooling down');
   });
 });

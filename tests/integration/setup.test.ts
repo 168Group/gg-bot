@@ -64,13 +64,21 @@ it('supervises real service processes, separates credentials and stops old worke
   const { ManagedRuntime } = await import('../../apps/setup/src/runtime.js');
   const dir = await mkdtemp(`${tmpdir()}/omo-runtime-test-`);
   const fixture = `${dir}/service.mjs`;
-  await writeFile(fixture, `import {createServer} from 'node:http';import {writeFileSync} from 'node:fs';const role=process.env.DISCORD_BOT_TOKEN?'bot':'web';writeFileSync(process.env.FIXTURE_PID_DIR+'/'+role,String(process.pid));const app=createServer((req,res)=>{res.setHeader('content-type','application/json');res.end(JSON.stringify({ok:true,pid:process.pid,bot:!!process.env.DISCORD_BOT_TOKEN,oauth:!!process.env.DISCORD_CLIENT_SECRET,session:!!process.env.SESSION_ENCRYPTION_KEY}));});app.listen(Number(role==='bot'?process.env.BOT_HEALTH_PORT:process.env.WEB_PORT),'127.0.0.1');process.on('SIGTERM',()=>app.close());`);
+  await writeFile(fixture, `import {createServer} from 'node:http';import {writeFileSync} from 'node:fs';const role=process.env.DISCORD_BOT_TOKEN?'bot':'web';writeFileSync(process.env.FIXTURE_PID_DIR+'/'+role,String(process.pid));const app=createServer((req,res)=>{res.setHeader('content-type','application/json');res.end(JSON.stringify({ok:true,pid:process.pid,bot:!!process.env.DISCORD_BOT_TOKEN,oauth:!!process.env.DISCORD_CLIENT_SECRET,session:!!process.env.SESSION_ENCRYPTION_KEY,moduleSecrets:!!process.env.MODULE_SECRET_ENCRYPTION_KEY}));});app.listen(Number(role==='bot'?process.env.BOT_HEALTH_PORT:process.env.WEB_PORT),'127.0.0.1');process.on('SIGTERM',()=>app.close());`);
   const store = await InstallationStore.open(`${dir}/install`), provisioner = new Provisioner(store);
   const runtime = new ManagedRuntime(provisioner, 'http://localhost:3000', { bot: fixture, web: fixture }, async () => {});
   const profile: import('../../apps/setup/src/model.js').Profile = { id: 'fixture', name: 'Test', guildId, kind: 'postgres', ready: true, createdAt: 'now', env: { DATABASE_URL: 'postgresql://fixture', FIXTURE_PID_DIR: dir }, discord: { applicationId: guildId, ownerId: guildId, botName: 'Test', botToken: 'fixture-token', clientSecret: 'fixture-secret' } };
+  const saved = await store.read(); saved.profiles.push(profile); await store.save(saved);
   try {
-    await runtime.start(profile); expect(runtime.status).toBe('running');
-    expect(await (await fetch(runtime.webUrl!)).json()).toMatchObject({ bot: false, oauth: true, session: true });
+    const persist = store.save.bind(store); let writes = 0;
+    store.save = async state => { writes++; if (writes === 1) throw new Error('Synthetic profile persistence failure'); await persist(state); };
+    await expect(runtime.start(profile)).rejects.toThrow('Synthetic profile persistence failure');
+    const generated = profile.env.MODULE_SECRET_ENCRYPTION_KEY;
+    expect(generated).toHaveLength(64);
+    await runtime.start(profile);
+    expect(writes).toBe(2); expect(profile.env.MODULE_SECRET_ENCRYPTION_KEY).toBe(generated);
+    expect((await store.read()).profiles[0]?.env.MODULE_SECRET_ENCRYPTION_KEY).toBe(profile.env.MODULE_SECRET_ENCRYPTION_KEY); expect(runtime.status).toBe('running');
+    expect(await (await fetch(runtime.webUrl!)).json()).toMatchObject({ bot: false, oauth: true, session: true, moduleSecrets: true });
     const old = await Promise.all(['bot', 'web'].map(async name => Number(await readFile(`${dir}/${name}`, 'utf8'))));
     await runtime.start(profile);
     for (const pid of old) expect(() => process.kill(pid, 0)).toThrow();

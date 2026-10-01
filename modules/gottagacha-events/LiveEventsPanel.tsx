@@ -24,7 +24,7 @@ export default function LiveEventsPanel({ state, dirty }: { state: ModuleState |
     <div className="panel-heading"><h2>This week in Warren</h2><Badge tone={fresh ? 'good' : 'warn'}>{fresh ? 'Recent API snapshot' : 'Needs refresh'}</Badge></div>
     <p>Public events only, using America/Detroit venue times. Refreshes are manual. Announcements, member actions and publishing remain unavailable.</p>
     <button className="primary" disabled={user.access === 'viewer' || !active || dirty || pending || Boolean(cooldown)} onClick={() => run.mutate()}><RefreshCw size={16}/>Refresh from GottaGacha</button>
-    {!active && <Notice>Enable the module and wait for its settings to apply. The bot service needs its declared API key with events:read scope.</Notice>}
+    {!active && <Notice>Enable the module and wait for its settings to apply. An owner can configure the API key in Manage secrets before refreshing.</Notice>}
     {cooldown && <small>You can refresh again when the cooldown ends.</small>}
     {snapshot.isPending && <p>Loading event information…</p>}
     {pending && <Notice>Waiting for the bot to read the upcoming week…</Notice>}
