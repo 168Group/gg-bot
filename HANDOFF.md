@@ -1,6 +1,6 @@
 # Implementation handoff
 
-Updated 2026-09-30. OMOBot is a modular, self-hostable Discord bot by OMOWorlds, released under Apache 2.0. One deployment serves one configured guild. README is the public entry point; ROADMAP records unfinished work.
+Updated 2026-10-01. OMOBot is a modular, self-hostable Discord bot by OMOWorlds, released under Apache 2.0. One deployment serves one configured guild. README is the public entry point; ROADMAP records unfinished work.
 
 ## Current implementation
 
@@ -15,6 +15,8 @@ Discord channel logs now use readable summaries for creation/deletion and change
 The guided setup launcher provisions local PocketBase, uploads a first-install PocketBase hook bundle over SFTP, or migrates an existing PostgreSQL database. Activation verifies Discord credentials, synchronizes commands and supervises separate bot/web services. Real Discord and hosted PocketHost deployment acceptance remain outstanding.
 
 ## Verified state
+
+The 2026-10-01 collector wiring fix reproduced missing message deletion, role assignment and voice observations through the installed production module registry on both providers: settings were applied but no events were persisted. The runtime and installed logging factory owned different repository objects, so the runtime's repository-local collection settings stayed null. Collection now reads stable, validated settings from ModuleHost after successful module application; disable/stop clears them and failed changes retain the last accepted settings. Typecheck, lint, 63 unit tests, 64 real database/integration tests and the production build pass. Regression coverage includes immediate create/delete, new-member role comparison, voice capture, delivery and cache clearing on disable. Real Discord acceptance remains necessary; live browser inspection was unavailable while the Mac was locked.
 
 The PocketHost polling/error-handling fix passed typecheck, lint, 63 unit tests, the 61 existing real database/integration tests, one new real HTTP proxy integration test and a production build locally. Regression tests reproduced the old misleading rate-limit error and primitive/null JSON failures before the fix. Lease-loss and cooldown tests confirm that rate limiting does not permit continued ownership. These tests do not establish live host throughput.
 
@@ -33,6 +35,7 @@ The activity-logging update passed typecheck, lint, 52 unit tests, 61 database/i
 - On 2026-09-30, downstream Railway logs showed non-JSON storage failures beginning about five minutes after startup, then exhausted restarts. The configured PocketHost endpoint later returned healthy JSON and advertised a 1,000/hour per-IP cap. The old idle loop could exceed 12,000 requests/hour with logging enabled. Rate limiting is the leading explanation, but the old logs did not retain the upstream status, so the historical HTTP 429 is not proven. One idle logging module now uses roughly 960 requests/hour including lease renewals and the logging module's test/diagnostics job claim, before event traffic, dashboard traffic and extra modules. Busy deployments still need a larger host budget or a different hosting arrangement; do not treat lower polling as unlimited capacity.
 - Enable Server Members and Message Content privileged intents in the Discord application before starting this version, even when new event switches are off. Deploy matching bot and dashboard builds. No storage bundle change accompanies this update.
 - The raw Gateway collector runs before discord.js updates member/voice caches. Preserve that ordering. Member baseline fetching is bounded to 15 seconds; missing baselines record gaps instead of fabricated changes.
+- Collector policy comes from `ModuleHost.activeSettings('logging')`. Do not restore repository-local policy state: package factories can create their own repository objects. Ordinary new messages remain memory-only. Member join/leave events are not implemented; initial roles already present in a join snapshot are not fabricated as role changes.
 - Discord.js MessageManager caching is explicitly disabled. The logging collector alone holds up to 1,000 messages for 30 minutes, with 4,000 content characters and ten attachment names per snapshot. Cache state clears on applied-policy changes, disconnect and shutdown; only edits/deletions persist content under event retention. Module message subscribers still receive live message content.
 - Message/voice subjects are not channel IDs. Exclusion checks must use channelId, category and snapshot containerId (for thread parents), both before collection and before delivery. The existing PocketBase hooks persist generic events; the delivery worker performs the additional exclusion/event-switch recheck.
 - Use the pinned Node/pnpm versions. Runtime profiles, `.env`, databases, dependencies, builds and screenshots are ignored by Git.
