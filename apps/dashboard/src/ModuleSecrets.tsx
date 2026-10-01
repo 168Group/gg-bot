@@ -8,7 +8,7 @@ import { Notice } from '../../../packages/ui/src/index.js';
 export function ModuleSecretsPanel({ moduleId }: { moduleId: string }) {
   const user = useSession(), [open, setOpen] = useState(false);
   if (user.access !== 'owner') return null;
-  return <section className="module-secrets"><button className="text-link" aria-expanded={open} onClick={() => setOpen(!open)}><KeyRound size={15}/>{open ? 'Close secrets' : 'Manage secrets'}</button>{open && <SecretFields key={moduleId} moduleId={moduleId}/>}</section>;
+  return <section className="module-secrets"><button type="button" className="text-link" aria-expanded={open} onClick={() => setOpen(!open)}><KeyRound size={15}/>{open ? 'Close secrets' : 'Manage secrets'}</button>{open && <SecretFields key={moduleId} moduleId={moduleId}/>}</section>;
 }
 function SecretFields({ moduleId }: { moduleId: string }) {
   const [items, setItems] = useState<SecretMetadata[] | null>(null), [error, setError] = useState('');
@@ -57,10 +57,10 @@ function SecretControl({ moduleId, initial }: { moduleId: string; initial: Secre
   return <div className="secret-card" aria-label={`${initial.name} secret`}>
     <div className="secret-heading"><strong>{initial.name}</strong><small>Revision {metadata.revision}</small></div>
     <p className="secret-source">{metadata.source === 'stored' ? 'Encrypted in storage' : metadata.source === 'disabled' ? 'Disabled, including environment fallback' : 'Bot environment · availability unknown'}</p>
-    <div className="secret-value"><output aria-label={`${initial.name} value`}>{showing ? revealed || 'Loading…' : metadata.configured ? '••••••••' : 'No dashboard value'}</output>{showing ? <button onClick={clear}><EyeOff size={14}/>Hide</button> : metadata.canReveal && <button disabled={busy} onClick={() => { void reveal(); }}><Eye size={14}/>Show</button>}</div>
+    <div className="secret-value"><output aria-label={`${initial.name} value`}>{showing ? revealed || 'Loading…' : metadata.configured ? '••••••••' : 'No dashboard value'}</output>{showing ? <button type="button" onClick={clear}><EyeOff size={14}/>Hide</button> : metadata.canReveal && <button type="button" disabled={busy} onClick={() => { void reveal(); }}><Eye size={14}/>Show</button>}</div>
     {showing && <small>Hidden automatically after 30 seconds, when you leave, or when this tab is hidden.</small>}
     <label>Replace {initial.name}<input type="password" autoComplete="off" spellCheck={false} value={draft} maxLength={4096} disabled={busy} onChange={event => setDraft(event.target.value)}/></label>
-    <div className="secret-actions"><button className="primary" disabled={busy || !draft} onClick={() => { void change('save'); }}>Save secret</button><button disabled={busy || metadata.source === 'disabled'} onClick={() => { void change('disable'); }}>Delete and disable</button>{metadata.source !== 'environment' && <button disabled={busy} onClick={() => { void change('environment'); }}>Use environment</button>}</div>
+    <div className="secret-actions"><button type="button" className="primary" disabled={busy || !draft} onClick={() => { void change('save'); }}>Save secret</button><button type="button" disabled={busy || metadata.source === 'disabled'} onClick={() => { void change('disable'); }}>Delete and disable</button>{metadata.source !== 'environment' && <button type="button" disabled={busy} onClick={() => { void change('environment'); }}>Use environment</button>}</div>
     {notice && <Notice error={failed}>{notice}</Notice>}
   </div>;
 }

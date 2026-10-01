@@ -11,6 +11,7 @@ test('owners edit masked module secrets and reveal only deliberately with automa
   await card.getByRole('button', { name: 'Manage secrets' }).click();
   const input = card.getByLabel('Replace API_KEY'), output = card.getByLabel('API_KEY value');
   await expect(input).toHaveAttribute('type', 'password');
+  for (const button of await card.locator('.module-secrets button').all()) await expect(button).toHaveAttribute('type', 'button');
   await expect(input).toBeEmpty(); expect(reveals).toBe(0);
   await input.fill(value);
   await card.getByRole('button', { name: 'Save secret', exact: true }).click();
