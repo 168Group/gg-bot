@@ -38,13 +38,20 @@ describe('registry and lifecycle', () => {
       async acknowledge(_, next) { state = { ...state, appliedRevision: next.desiredRevision, appliedEnabled: next.enabled }; },
       async reject(_, __, message) { state.applyError = message; }
     }, { info() {}, error() {} });
+    expect(host.activeSettings('example')).toBeNull();
     await host.sync(); expect(await host.command('example ping')).toBe('One');
+    const acceptedSettings = host.activeSettings('example');
+    expect(acceptedSettings).toEqual({ greeting: 'One' });
+    await host.sync(); expect(host.activeSettings('example')).toBe(acceptedSettings);
     state = { ...state, desiredRevision: 2, settings: { greeting: '' } };
     await host.sync(); expect(state.appliedRevision).toBe(1); expect(await host.command('example ping')).toBe('One');
+    expect(host.activeSettings('example')).toBe(acceptedSettings);
     state = { ...state, desiredRevision: 3, settings: { greeting: 'Two' } };
     await host.sync(); expect(await host.command('example ping')).toBe('Two');
+    expect(host.activeSettings('example')).toEqual({ greeting: 'Two' });
     state = { ...state, desiredRevision: 4, enabled: false };
     await host.sync(); expect(await host.command('example ping')).toContain('disabled'); expect(state.appliedEnabled).toBe(false);
+    expect(host.activeSettings('example')).toBeNull();
     await host.stop();
   });
   it('drains in-flight handlers before acknowledging disable and cleans a failed start', async () => {
