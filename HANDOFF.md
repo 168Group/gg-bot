@@ -14,6 +14,12 @@ Discord channel logs now use readable summaries for creation/deletion and change
 
 The guided setup launcher provisions local PocketBase, uploads a first-install PocketBase hook bundle over SFTP, or migrates an existing PostgreSQL database. Activation verifies Discord credentials, synchronizes commands and supervises separate bot/web services. Real Discord and hosted PocketHost deployment acceptance remain outstanding.
 
+## Dashboard asset rate limits (2026-10-01, request 04)
+
+Matched static `/assets/` GET and HEAD routes are exempt from the dashboard's application rate limits. They previously depleted the shared page and write buckets, causing JavaScript/font 429s and failed module navigation after repeated browser loads. Keep this namespace reserved for public build assets and preserve `wildcard:false` static registration. Authentication, API read/write and page budgets remain 20/360/60/120 per minute per IP. Sensitive response headers run before rate limiting, including rejected requests. This is a web-service update only; it adds no storage migration, hook protocol, environment variable or production deployment.
+
+Local typecheck, lint, production/fixture builds, 68 unit tests, 81 integration tests and all 18 desktop/mobile browser tests pass. The regression reproduced the old 429 and now verifies asset bursts plus every unchanged application budget. See docs/VERIFICATION.md.
+
 ## Declared module secrets (2026-10-01)
 
 Request GG-EVENTS-20261001-03 is implemented on `codex/module-secret-vault`, based on request-budget commit 49650dc, now merged in base main as 7a1f05b. Generic owner controls appear on module cards for manifest-declared names; no community-specific API behavior was added. Async `context.secrets.get(name)` reads each work unit's current stored override or explicit environment fallback. Legacy `context.secret(name)` stays environment-only, so downstream callers must migrate to use the controls.

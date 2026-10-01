@@ -28,13 +28,16 @@ export async function createServer(options: ServerOptions) {
   } } });
   const requestClass = (url: string, method: string) => url.startsWith('/auth/') ? 'auth' : method !== 'GET' ? 'write' : url.startsWith('/api/') ? 'read' : 'page';
   const budgets = { auth: 20, write: 60, read: 360, page: 120 };
-  await app.register(rateLimit, { timeWindow: '1 minute',
-    keyGenerator: request => `${request.ip}:${requestClass(request.url, request.method)}`,
-    max: request => budgets[requestClass(request.url, request.method)]
-  });
   app.addHook('onRequest', async (request, reply) => {
     reply.header('Cache-Control', 'no-store');
     if (request.url.startsWith('/auth/')) reply.header('Referrer-Policy', 'no-referrer');
+  });
+  await app.register(rateLimit, { timeWindow: '1 minute',
+    // Only matched build-asset routes are exempt, never raw URLs or query strings.
+    // Static registration uses wildcard:false, so missing files do not match here.
+    allowList: request => (request.method === 'GET' || request.method === 'HEAD') && Boolean(request.routeOptions.url?.startsWith('/assets/')),
+    keyGenerator: request => `${request.ip}:${requestClass(request.url, request.method)}`,
+    max: request => budgets[requestClass(request.url, request.method)]
   });
   app.setErrorHandler((error, request, reply) => {
     const validation = error instanceof z.ZodError;
