@@ -12,6 +12,10 @@ import { readConfig } from '../../packages/core/src/config.js';
 import { createServer } from '../../apps/web/src/server.js';
 import type { Observation } from '../../packages/module-sdk/src/server.js';
 import { runModuleJobs } from '../../packages/core/src/jobs.js';
+import staticFiles from '@fastify/static';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 let postgres: Awaited<ReturnType<typeof localPostgres>>, db: Database;
 const guild = '100000000000000001', owner = '100000000000000002', destination = '100000000000000010';
@@ -124,6 +128,43 @@ describe('protected dashboard', () => {
     };
     return { ...created, login, setRoles: (value: string[]) => { roles = value; }, revoke: () => { member = false; } };
   }
+  it('serves asset bursts without consuming page, read, write or auth budgets, while enforcing each budget', async () => {
+    const { app } = await server();
+    const root = await mkdtemp(join(tmpdir(), 'omo-static-budget-'));
+    try {
+      await writeFile(join(root, 'rate-limit-fixture.js'), 'export const fixture = true;');
+      await app.register(staticFiles, { root, prefix: '/assets/', wildcard: false, decorateReply: false });
+      for (let index = 0; index < 150; index++) {
+        for (const method of ['GET', 'HEAD'] as const) {
+          const response = await app.inject({ method, url: `/assets/rate-limit-fixture.js?v=${index}` });
+          expect(response.statusCode).toBe(200);
+          expect(response.headers['content-type']).toContain('javascript');
+        }
+      }
+      for (const { method, url, limit, status } of [
+        { method: 'GET', url: '/health/live', limit: 120, status: 200 },
+        { method: 'GET', url: '/api/me?asset=/assets/rate-limit-fixture.js', limit: 360, status: 401 },
+        { method: 'POST', url: '/api/modules/logging/test?asset=/assets/rate-limit-fixture.js', limit: 60, status: 401 },
+        { method: 'GET', url: '/auth/discord?asset=/assets/rate-limit-fixture.js', limit: 20, status: 302 }
+      ] as const) {
+        for (let index = 0; index < limit; index++) {
+          const response = await app.inject({ method, url });
+          expect(response.statusCode).toBe(status);
+          expect(response.headers['cache-control']).toBe('no-store');
+        }
+        const blocked = await app.inject({ method, url });
+        expect(blocked.statusCode).toBe(429);
+        expect(blocked.json().error.code).toBe('RATE_LIMITED');
+        expect(blocked.headers['cache-control']).toBe('no-store');
+        expect(blocked.headers['retry-after']).toBeDefined();
+      }
+      // Assets remain loadable even after every protected bucket is exhausted.
+      expect((await app.inject('/assets/rate-limit-fixture.js')).statusCode).toBe(200);
+      // Unsupported asset methods never return file content.
+      expect((await app.inject({ method: 'POST', url: '/assets/rate-limit-fixture.js' })).statusCode).not.toBe(200);
+      expect((await app.inject('/assets/does-not-exist.js')).statusCode).toBe(404);
+    } finally { await app.close(); await rm(root, { recursive: true, force: true }); }
+  });
   it('denies anonymous direct APIs, forged CSRF, unknown guild inputs, role revocation and reused OAuth states', async () => {
     const { app, login, revoke } = await server();
     try {

@@ -12,7 +12,7 @@ Updated 2026-10-01. Unchecked requirements are unfinished work. The verified fir
 
 ## Development tooling follow-up
 
-- [ ] Integrate the requested upstream static-asset rate-limit fix. The expanded 22-case local browser suite returned HTTP 429 for JavaScript chunks and a font during mobile logging navigation, causing a failed dynamic import. Assets currently share the 120/minute page bucket. Preserve auth/API limits when separating asset traffic. The secret controls themselves pass on both viewports; see docs/VERIFICATION.md.
+- [x] Integrate merged OMOBot PR #7 (`95db3e9`) to separate matched public build-asset GET/HEAD requests from application rate limits. This resolves the reproduced JavaScript/font HTTP 429 failure during mobile logging navigation while preserving page, API and auth budgets. All 24 combined downstream desktop/mobile browser cases pass, including asset bursts and Events secret controls. See docs/VERIFICATION.md.
 
 - The events foundation browser rerun on 2026-09-30 again hit the documented lease-expiry startup failure. Process inspection identified the failed run’s orphaned local PocketBase child; it was stopped before retrying, without bypassing worker ownership.
 
