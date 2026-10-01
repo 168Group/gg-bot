@@ -84,6 +84,55 @@ describe.each(['postgres', 'pocketbase'] as const)('%s storage contract', provid
     if (provider === 'postgres') await (driver as Database).query(pgSql);
     else { const sqlite = new DatabaseSync(`${pb!.directory}/pb_data/data.db`); try { sqlite.exec(sqliteSql); } finally { sqlite.close(); } }
   }
+  it('polls all installed modules and due work together without claiming early', async () => {
+    await store().initialize('Test', [exampleDefinition]); await activate();
+    const poll = () => store().call('workerPoll', { moduleIds: ['logging', 'example'], jobModuleIds: ['example'], status: 'online', details: { gateway: true } });
+    expect(await poll()).toMatchObject({ jobsDue: false, deliveriesDue: 0 });
+    const delayed = await store().resources('example').jobs.enqueue('remember', {}, 'later', { delayMs: 60000 });
+    await repository().capture(event(), settings, 2);
+    const due = await store().resources('example').jobs.enqueue('remember', {}, 'now');
+    const snapshot = await poll();
+    expect(snapshot.modules.map(m => m.moduleId)).toEqual(['logging', 'example']);
+    expect(snapshot).toMatchObject({ jobsDue: true, deliveriesDue: 1 });
+    expect((await store().call('jobGet', { id: due })).state).toBe('pending');
+    expect((await store().call('jobGet', { id: delayed })).state).toBe('pending');
+    const workspace = await store().call('dashboardSnapshot', { moduleIds: ['logging', 'example'] });
+    expect(workspace.status.health?.status).toBe('online');
+    expect(workspace.events).toHaveLength(1); expect(workspace.events[0]?.deliveryState).toBe('pending');
+    expect(workspace.modules).toEqual(snapshot.modules);
+    const prepared = (await store().call('deliveryPrepare', {}))!;
+    expect(prepared.event.id).toBe(prepared.delivery.event_id); expect(prepared.module.appliedRevision).toBe(2);
+    expect((await poll()).deliveriesDue).toBe(0);
+    await expect(store().call('workerPoll', { moduleIds: ['bad/id'], jobModuleIds: [], status: 'invalid', details: {} })).rejects.toThrow();
+    expect((await store().call('status', {})).health?.status).toBe('online');
+    await mutateForTest("UPDATE core_job SET expires_at=now()-interval '1 second'", 'UPDATE omo_job SET expires_at=0');
+    expect((await poll()).jobsDue).toBe(false);
+  });
+  it('refuses to send when settings or claim ownership change during Discord validation', async () => {
+    await activate(); await repository().capture(event(), settings, 2);
+    let sends = 0;
+    const worker = new DeliveryWorker(repository(), { async validate() { await store().updateModule('logging', 2, owner, { enabled: false }); }, async find() { return null; }, async send() { sends++; return destination; } });
+    await worker.tick(); expect(sends).toBe(0);
+    expect((await repository().list({ limit: 10 })).events[0]?.deliveryState).toBe('pending');
+    const changed = await store().getModule('logging'); await store().acknowledge('logging', changed);
+    await mutateForTest("UPDATE logging_delivery SET next_attempt=now()", 'UPDATE omo_delivery SET next_attempt=0');
+    await worker.tick(); expect(sends).toBe(0);
+    expect((await repository().list({ limit: 10 })).events[0]?.deliveryState).toBe('cancelled');
+  });
+  it('verifies prepared claims and never revives expired sessions by touching them', async () => {
+    await activate(); await repository().capture(event(), settings, 2);
+    const { delivery, module } = (await store().call('deliveryPrepare', {}))!;
+    const check = () => store().call('deliveryVerify', { id: delivery.id, claimToken: delivery.claim_token, revision: module.appliedRevision });
+    expect(await check()).toBe(true);
+    await mutateForTest("UPDATE logging_delivery SET claim_token='new-owner'", "UPDATE omo_delivery SET claim_token='new-owner'");
+    expect(await check()).toBe(false);
+    const hash = 'expired-session';
+    await store().call('sessionCreate', { id_hash: hash, user_id: owner, label: 'Owner', tokens: 'encrypted', csrf_hash: 'csrf', access: 'owner' });
+    expect(await store().call('sessionGet', { hash, touch: true })).not.toBeNull();
+    await mutateForTest("UPDATE dashboard_session SET last_seen=now()-interval '25 hours'", 'UPDATE omo_session SET last_seen=0');
+    expect(await store().call('sessionGet', { hash, touch: true })).toBeNull();
+    expect(await store().call('sessionGet', { hash })).toBeNull();
+  });
   it('handles health, catalog and saved/applied revisions identically', async () => {
     await store().ready(); await store().replaceCatalog([{ id: destination, name: 'staff-logs', type: 0, parentId: null, canSend: true }]);
     expect((await store().catalog())[0]?.canSend).toBe(true);
@@ -238,9 +287,13 @@ describe.each(['postgres', 'pocketbase'] as const)('%s storage contract', provid
     const { app } = await createServer({ config, db: driver, demo: true, clientId: 'fixture', encryptionKey: 'a'.repeat(64), identity: { async exchange() { throw new Error('unused'); }, async identity() { throw new Error('unused'); }, async membership(tokens) { if (!member) throw new Error('revoked'); return { tokens, roles: [] }; } } });
     try {
       expect((await app.inject('/api/modules/logging/events')).statusCode).toBe(401);
+      expect((await app.inject('/api/workspace')).statusCode).toBe(401);
       const login = await app.inject('/auth/demo'), cookies = { omo_session: login.cookies.find(c => c.name === 'omo_session')!.value };
       const me = (await app.inject({ url: '/api/me', cookies })).json().data;
       expect(me.access).toBe('owner');
+      const workspace = (await app.inject({ url: '/api/workspace', cookies })).json().data;
+      expect(workspace.user.userId).toBe(owner); expect(workspace.status.storageProvider).toBe(provider);
+      expect(workspace.modules.map((m: { moduleId: string }) => m.moduleId)).toEqual(['logging', 'example']);
       for(let i=0;i<121;i++) await app.inject('/health/live');
       expect((await app.inject('/auth/demo')).statusCode).toBe(302);
       const inactive = await app.inject({url:'/api/modules/example/tasks',method:'POST',cookies,headers:{origin:'http://localhost:3000','x-csrf-token':me.csrf},payload:{key:randomUUID()}});
@@ -256,6 +309,7 @@ describe.each(['postgres', 'pocketbase'] as const)('%s storage contract', provid
       expect((await app.inject({ url: '/api/modules/logging/test', method: 'POST', cookies, headers: { origin: 'http://localhost:3000', 'x-csrf-token': 'forged' }, payload: { key: randomUUID() } })).statusCode).toBe(403);
       member = false;
       expect((await app.inject({ url: '/api/modules/logging/test', method: 'POST', cookies, headers: { origin: 'http://localhost:3000', 'x-csrf-token': me.csrf }, payload: { key: randomUUID() } })).statusCode).toBe(403);
+      expect((await app.inject({ url: '/api/workspace', cookies })).statusCode).toBe(401);
     } finally { await app.close(); }
   });
   it('isolates module records and fences concurrent edits with bounded pagination', async () => {
@@ -346,6 +400,9 @@ describe.each(['postgres', 'pocketbase'] as const)('%s storage contract', provid
       const releaseSecond = await second.singleton(guild, () => {});
       try {
         await expect(store().call('workerVerify', {})).rejects.toMatchObject({ statusCode: 409 });
+        await expect(store().call('workerPoll', { moduleIds: ['logging'], jobModuleIds: [], status: 'online', details: {} })).rejects.toMatchObject({ code: 'LEASE_LOST' });
+        await expect(store().call('deliveryPrepare', {})).rejects.toMatchObject({ code: 'LEASE_LOST' });
+        await expect(store().call('deliveryVerify', { id: randomUUID(), claimToken: randomUUID(), revision: 2 })).rejects.toMatchObject({ code: 'LEASE_LOST' });
         await release!(); release = undefined;
         await expect(second.scope(guild).call('workerVerify', {})).resolves.toBeNull();
       } finally { await releaseSecond(); await second.close(); }

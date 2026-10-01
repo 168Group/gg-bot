@@ -11,8 +11,8 @@ const moduleFields = fields({ moduleId: 'module_id', settingsVersion: 'settings_
 const eventFields = fields({ id: 'e.id', type: 'e.type', subjectId: 'e.subject_id', subjectLabel: 'e.subject_label', channelId: 'e.channel_id', parentId: 'e.parent_id', observedAt: 'e.observed_at', before: 'json(e.before_value)', after: 'json(e.after_value)', actorId: 'e.actor_id', reason: 'e.reason', attribution: 'e.attribution', configRevision: 'e.config_revision', expiresAt: 'e.expires_at', deliveryState: 'd.state', messageId: 'd.message_id', destinationId: 'd.destination_id' });
 const jobFields = fields({ id: 'id', module_id: 'module_id', payload: 'json(payload)', attempts: 'attempts', type: 'type', state: 'state', result: 'json(result)', error: 'error', expires_at: 'expires_at', claim_token: 'claim_token' });
 const deliveryFields = fields({ id: 'id', event_id: 'event_id', destination_id: 'destination_id', marker: 'marker', attempts: 'attempts', created_at: 'created_at', claim_token: 'claim_token' });
-const workerOperations = new Set(['workerVerify', 'moduleAcknowledge', 'moduleReject', 'heartbeat', 'eventCapture', 'jobClaim', 'jobFinish', 'deliveryClaim', 'deliveryFinish', 'loggingApply', 'loggingCancel']);
-const readOperations = new Set(['ready', 'moduleGet', 'recordGet', 'recordList', 'catalogGet', 'rolesGet', 'status', 'jobGet', 'sessionGet', 'eventList', 'eventDetail']);
+const workerOperations = new Set(['workerPoll', 'deliveryPrepare', 'deliveryVerify', 'workerVerify', 'moduleAcknowledge', 'moduleReject', 'heartbeat', 'eventCapture', 'jobClaim', 'jobFinish', 'deliveryClaim', 'deliveryFinish', 'loggingApply', 'loggingCancel']);
+const readOperations = new Set(['ready', 'moduleGet', 'recordGet', 'recordList', 'catalogGet', 'rolesGet', 'status', 'jobGet', 'eventList', 'eventDetail']);
 function settings(input) {
   object(input); integer(input.metadataRetentionDays, 7, 90);
   if (input.destinationId !== null && !/^\d{17,20}$/.test(input.destinationId)) fail(400, 'INVALID_INPUT', 'Invalid destination.');
@@ -41,7 +41,31 @@ function execute(app, guild, operation, input, owner) {
     const recordScope = () => { const module = text(input.moduleId,32); if (!/^[a-z][a-z0-9-]{0,31}$/.test(module)) fail(400,'INVALID_INPUT','Invalid module ID.'); getModule(module); return module; };
     const mapRecord = row => row ? { ...row, updatedAt: iso(row.updatedAt) } : null;
     const recordGet = (module,key) => mapRecord(one(`SELECT ${recordFields} FROM omo_module_record WHERE guild_id={:guild} AND module_id={:module} AND key={:key} AND (expires_at IS NULL OR expires_at>{:now})`, {module,key}));
+    const moduleIds = value => { if (!Array.isArray(value) || value.length > 100 || value.some(id => typeof id !== 'string' || !/^[a-z][a-z0-9-]{0,31}$/.test(id))) fail(400, 'INVALID_INPUT', 'Invalid module IDs.'); return [...new Set(value)]; };
     const actions = {
+      workerPoll() {
+        const ids = moduleIds(input.moduleIds), jobs = moduleIds(input.jobModuleIds);
+        const modules = ids.map(getModule);
+        actions.heartbeat();
+        const jobsDue = !!one(`SELECT json_object('id',id) AS doc FROM omo_job WHERE guild_id={:guild} AND module_id IN (SELECT value FROM json_each({:modules})) AND expires_at>{:now} AND due_at<={:now} AND (state='pending' OR (state='sending' AND lease_until<{:now})) LIMIT 1`, { modules: JSON.stringify(jobs) });
+        const deliveriesDue = ids.includes('logging') ? rows(`SELECT json_object('id',d.id) AS doc FROM omo_delivery d JOIN omo_event e ON e.id=d.event_id AND e.guild_id=d.guild_id WHERE d.guild_id={:guild} AND e.expires_at>{:now} AND ((d.state='pending' AND d.next_attempt<={:now}) OR (d.state='sending' AND d.lease_until<{:now})) LIMIT 5`).length : 0;
+        return { modules, jobsDue, deliveriesDue };
+      },
+      dashboardSnapshot() {
+        const ids = moduleIds(input.moduleIds), modules = ids.map(getModule);
+        const events = ids.includes('logging') ? rows(`SELECT ${eventFields} FROM omo_event e LEFT JOIN omo_delivery d ON d.event_id=e.id AND d.guild_id=e.guild_id WHERE e.guild_id={:guild} AND e.expires_at>{:now} ORDER BY e.observed_at DESC,e.id DESC LIMIT 5`).map(mapEvent) : [];
+        return { modules, status: actions.status(), events };
+      },
+      deliveryPrepare() {
+        const delivery = actions.deliveryClaim();
+        if (!delivery) return null;
+        const event = mapEvent(required(one(`SELECT ${eventFields} FROM omo_event e LEFT JOIN omo_delivery d ON d.event_id=e.id AND d.guild_id=e.guild_id WHERE e.guild_id={:guild} AND e.id={:id} AND e.expires_at>{:now}`, { id: delivery.event_id })));
+        return { delivery, event, module: getModule('logging') };
+      },
+      deliveryVerify() {
+        return !!one(`SELECT json_object('id',d.id) AS doc FROM omo_delivery d JOIN omo_event e ON e.id=d.event_id AND e.guild_id=d.guild_id JOIN omo_module m ON m.guild_id=d.guild_id AND m.module_id='logging'
+          WHERE d.guild_id={:guild} AND d.id={:id} AND d.claim_token={:token} AND d.state='sending' AND d.lease_until>{:now} AND e.expires_at>{:now} AND m.enabled=1 AND m.applied_enabled=1 AND m.applied_revision={:revision} AND m.desired_revision=m.applied_revision`, { id: text(input.id), token: text(input.claimToken), revision: integer(input.revision, 1, 2147483647) });
+      },
       recordGet() { return recordGet(recordScope(),text(input.key,160)); },
       recordList() {
         const module = recordScope(), limit = integer(input.limit,1,100);
@@ -69,7 +93,7 @@ function execute(app, guild, operation, input, owner) {
         write(`INSERT INTO omo_settings_audit(id,guild_id,actor_id,module_id,before_value,after_value,created_at) VALUES({:key},{:guild},'system:migration',{:id},{:before},{:after},{:now})`,{key:uuid(),id,before:JSON.stringify(before.settings),after:settings}); return getModule(id);
       },
       workerVerify() { return null; },
-      ready() { const row = one(`SELECT json_object('version',version) AS doc FROM omo_schema`); if (!row || row.version !== 1) throw new Error('Schema mismatch'); return { protocol: 1 }; },
+      ready() { const row = one(`SELECT json_object('version',version) AS doc FROM omo_schema`); if (!row || row.version !== 1) throw new Error('Schema mismatch'); return { protocol: 1, trafficProtocol: 1 }; },
       initialize() {
         text(input.displayName, 60); if (!Array.isArray(input.modules) || input.modules.length > 100) fail(400, 'INVALID_INPUT', 'Invalid modules.');
         write('INSERT INTO omo_guild(guild_id,display_name) VALUES({:guild},{:name}) ON CONFLICT DO NOTHING', { name: input.displayName });
@@ -138,7 +162,7 @@ function execute(app, guild, operation, input, owner) {
       },
       sessionGet() {
         const session = one(`SELECT ${fields({ id_hash: 'id_hash', user_id: 'user_id', label: 'label', tokens: 'tokens', csrf_hash: 'csrf_hash', checked_at: 'checked_at', access: 'access' })} FROM omo_session WHERE guild_id={:guild} AND id_hash={:hash} AND expires_at>{:now} AND last_seen>{:cutoff}`, { hash: text(input.hash), cutoff: now - day });
-        if (session) session.checked_at = iso(session.checked_at); return session;
+        if (session) { session.checked_at = iso(session.checked_at); if (input.touch === true) actions.sessionTouch(); } return session;
       },
       sessionRefresh() { write('UPDATE omo_session SET tokens={:tokens},access={:access},checked_at={:now} WHERE guild_id={:guild} AND id_hash={:hash}', { hash: text(input.hash), tokens: text(input.tokens, 20000), access: input.access }); return null; },
       sessionTouch() { write('UPDATE omo_session SET last_seen={:now} WHERE guild_id={:guild} AND id_hash={:hash}', { hash: text(input.hash) }); return null; },
