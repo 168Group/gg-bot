@@ -32,14 +32,20 @@ Each GET has a ten-second deadline including the response body, at most three at
 
 A refresh clears the old public projection before network work. Failure or an interrupted job leaves events unavailable. Successful results remain visible for at most five minutes and are hidden after a settings revision change or venue date rollover. The single scoped public cache record remains stored until replaced; expiry controls display, not record deletion. Dashboard reads and `/events upcoming` use only this cache. Times remain venue-local America/Detroit wall times, without inventing UTC offsets at DST transitions. Cancelled events disappear from the list, so absence is never treated as proof of cancellation. Manual refreshes deliberately avoid background polling while the PocketHost request-budget gate remains open.
 
+## Dashboard secret configuration
+
+Requested behavior: an owner can save or replace the API key from a secret control in this module’s dashboard, see a mask by default, and explicitly Show or Hide its value. Stored values must be encrypted; routine settings/status responses must contain only configured/source metadata. Revealed plaintext should clear on hide, navigation and a short timeout, without entering browser persistence or shared query caches. The next event refresh must use an updated key.
+
+This control is **not implemented yet**. The existing SDK only reads module secrets from the bot environment. Shared encrypted storage, save/reveal APIs and reusable UI have been requested from the separate OMOBot task. Until reviewed upstream support is merged and integrated, use the documented environment variable privately on the bot service. Do not paste a key into ordinary dashboard settings or chat.
+
 ## Unresolved API capabilities
 
 The documented POST creates a public active event with a null creator. PATCH changes an event and DELETE cancels its entire series. The module implements none of these writes. Create requests have **no idempotency support**; a saved Discord-message-to-event mapping cannot reconcile a response lost before its event ID is saved. Confirm a supported uncertain-create reconciliation mechanism before implementing retryable publishing.
 
-The guide does not establish Discord-to-member linkage, delegated authorization, consent/revocation or RSVP endpoints. Obtain those contracts before implementing member actions. Staff draft preview parsing remains fixture-only and does not imply that API publishing is configured.
+RSVP is deferred to a later Discord-native feature. It can use Discord identity and module-scoped occurrence records without requiring a GottaGacha member API. Capacity rules, visibility and event changes will be specified when that feature is requested. Cross-system member linkage or RSVP synchronization remains out of scope; obtain that API contract only if such synchronization is later requested. Staff draft preview parsing remains fixture-only and does not imply that API publishing is configured.
 
 ## Remaining gates
 
 The merged PocketHost recovery update uses 30-second worker polling, so settings and jobs may take roughly 30 seconds plus processing time. Before deploying an additional module, verify the remote request budget. Source review of the existing loop estimates about 1,080 idle requests/hour with logging plus this installed module (including lease renewal), above the host's observed 1,000/hour per-IP cap before dashboard/event traffic. This estimate still needs instrumentation. Generic batching/headroom is requested upstream; local fixture verification does not establish deployment capacity.
 
-Live announcements depend on upstream reusable delivery/reconciliation support. Preview records cannot replace it. Member actions depend on verified API identity and authorization. Event creation needs a reviewable exact draft revision, expiring explicit confirmation, a rechecked staff role/channel and an idempotent job whose uncertain result is reconciled before retry. Deployment and real publishing require separate authorization.
+Live announcements depend on upstream reusable delivery/reconciliation support. Preview records cannot replace it. Discord-native RSVP is deferred and does not block this read-only slice. Event creation needs a reviewable exact draft revision, expiring explicit confirmation, a rechecked staff role/channel and an idempotent job whose uncertain result is reconciled before retry. Deployment and real publishing require separate authorization.
