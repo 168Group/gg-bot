@@ -1,6 +1,6 @@
 # PocketHost deployment guide
 
-Last checked: 2026-09-24. Locally tested PocketBase version: **0.40.4**. Storage protocol: **1**.
+Last checked: 2026-10-01. Locally tested PocketBase version: **0.40.4**. Storage protocol: **1**, with **trafficProtocol: 1** required by current clients.
 
 PocketHost documents SFTP access to `pb_hooks` and `pb_migrations` and Secrets exposed in the PocketBase runtime. These capabilities support this adapter on a normal hosted instance without a custom binary. Account-specific deployment has not been performed.
 
@@ -59,7 +59,7 @@ These commands are deployment instructions, not evidence that an image or your h
 
 - Each event and its initial delivery row commit in one PocketBase transaction. A failed queue insert rolls back the event.
 - Settings updates compare revisions inside a transaction. A stale editor gets 409 and retains its unsaved changes.
-- One bot owns a renewable 60-second instance lease. It renews every 10 seconds and fails closed on renewal failure; server-side writes verify the owner. Delivery/job claims have separate tokens and 90-second leases so an old worker cannot finalize a newer claim.
+- One bot owns a renewable 60-second instance lease. It renews every 20 seconds and fails closed on renewal failure; server-side writes verify the owner. Delivery/job claims have separate tokens and 90-second leases so an old worker cannot finalize a newer claim.
 - Verify worker ownership immediately before sending. Discord posting remains at-least-once/best-effort duplicate suppression: no database can atomically commit a Discord HTTP send and a local transaction.
 - Requests have bounded timeouts and never silently switch backend. Storage outages can lose uncommitted Gateway observations; coverage incidents must remain visible.
 - Back up before uploads that change migrations. PocketBase migrations run transactionally. Keep the matching hooks, migration files and previous application image together for rollback analysis.
@@ -69,3 +69,35 @@ These commands are deployment instructions, not evidence that an image or your h
 ## Not yet verified on your account
 
 Instance version selection, Secrets propagation, SFTP upload/restart, latency/rate limits under realistic bursts, backup restoration, real Discord login/delivery, and sustained production observation remain deployment checks. The local test suite establishes backend semantics, not PocketHost account configuration or Discord permissions.
+
+## Request budget and operational limits
+
+[PocketHost's published limits](https://pockethost.io/docs/limits) include 1,000 requests/hour per source IP, 10,000/hour per instance and 50 requests per 10 seconds per IP. A backend bot and dashboard can share the same outbound IP. Unlimited instances do not imply unlimited requests. Use the returned `X-PocketHost-RateLimit-Ip-Hourly-*` and instance headers for the actual allowance. Rate-limit headers are edge-local observations, not a guarantee of a global remaining budget.
+
+The worker uses one `workerPoll` every 30 seconds on `*.pockethost.io`: all installed module states, heartbeat and due-work availability. It does not claim jobs or deliveries until after settings synchronization. Catalog refresh is every five minutes; core/logging cleanup is hourly. Independent lease renewal is every 20 seconds; the remote lease remains 60 seconds and the local monotonic deadline remains 45 seconds. A late or failed renewal still stops ownership.
+
+Log delivery uses `deliveryPrepare` to claim and read its event/settings, followed by `deliveryVerify` immediately before Discord posting and `deliveryFinish`. Capture plus a normal successful delivery costs four HTTP requests. There is no empty-queue claim on idle polls. Disabled, expired and excluded deliveries are still checked; saved configuration changes or stale claim tokens prevent a send. Discord delivery remains at-least-once with existing marker reconciliation.
+
+The dashboard shares one authenticated workspace snapshot per minute across overview, navigation, module controls and logging settings/diagnostics. Session reads also touch valid sessions in one operation. Membership checks still occur at least every 60 seconds on reads and on every mutation. The detailed event list loads on navigation/filter changes and explicit refresh. Background tabs do not poll. Job diagnostics and third-party module pages can add traffic.
+
+Measured in `tests/pockethost-budget.test.ts` through the production adapter, worker cycle, logging delivery and Fastify/Auth, using simulated time and HTTP responses:
+
+- One module, idle hour including startup/shutdown: **325 requests**.
+- Two installed modules, idle hour including startup/shutdown: **328 requests**. Recurring cost stays the same; startup has three more requests.
+- Two modules, 100 separately captured/delivered changes spread across 50 minutes, one overview open for the full hour: **912 requests**, peak **27 in a rolling 10-second window**.
+
+These are measured test workloads, not live PocketHost capacity certification. They include 180 lease renewals, 120 polls, 12 maintenance catalog refreshes plus startup, one core/logging cleanup each, dashboard authorization and 59 membership refresh writes. Failures, retries, interactive navigation, explicit refreshes, external health monitors, more viewers, generic module records/jobs and bursts add requests. An hourly average does not protect against a burst cap. Ordinary new chat messages remain memory-only and do not consume event storage requests.
+
+For busier servers, use PocketHost's supported trusted-IP option or request a larger operator-configured budget, or self-host PocketBase near the bot. Trusted IPs need a stable egress address and account configuration; do not spoof client-IP headers or rotate addresses to evade limits. PostgreSQL remains supported. No automatic data migration or provider fallback occurs.
+
+## Upgrading existing instances for the request-budget release
+
+This update changes **only `pb_hooks/operations.js`** on the PocketBase side. It does not change the schema, migrations, binding, service key or stored data. The updated hooks remain compatible with the previous bot/dashboard, allowing a hooks-first rollout. New clients refuse to initialize if `ready` does not return `{ "protocol": 1, "trafficProtocol": 1 }`; do not deploy those clients first.
+
+1. Retain a verified PocketHost backup and the current bot/dashboard image. Generate the bundle with `pnpm pocketbase:bundle`; inspect `dist/pockethost/manifest.json` for the expected SHA-256.
+2. Confirm the target instance and registered instance-scoped SFTP key. The previous unmodified `operations.js` from base commit `1796e3a` has SHA-256 `62693fa1182e75c1b528769d577816d7b6821eed017e8cc97c413910d84fa30d`. If the remote file differs, review its customizations before replacing it.
+3. Through PocketHost controls, stop the instance for a brief maintenance window, replace only `pb_hooks/operations.js` from the bundle using SFTP, then start it. Alternatively, a verified atomic replacement with supported hook reload avoids a partial-file window. Do not truncate a live hook file in place. The initial setup wizard intentionally refuses differing files; it is not an upgrade tool.
+4. From the deployment environment, POST `/api/omo/v1/ready` using its existing `X-OMO-Storage-Key` header and `{ "guildId": "CONFIGURED_GUILD", "input": {} }`. Confirm both protocol fields. Keep credentials out of terminal output and chat. Check normal operations and existing data as well.
+5. Deploy the matching bot/dashboard revision. Check readiness, enabled/applied settings, a real edit/delete and role-change log, and the host's remaining quota over a full hour. The catalog can now take five minutes to reflect new channels; settings/delivery can take approximately 30 seconds plus processing.
+
+If the client deploy fails, the previous client can run against the upgraded hooks. Restore old hooks only if rolling all clients back too; current clients require the new operations. Remote rollout and sustained live acceptance remain unverified until operator access is available.
