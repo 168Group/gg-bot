@@ -84,7 +84,7 @@ test('a separate module saves settings, runs a job, and reads its own persisted 
   await expect(card).toBeVisible();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth <= (visualViewport?.width ?? innerWidth) + 1)).toBe(true);
   if (await card.getByRole('button',{name:'Enable',exact:true}).count()) await card.getByRole('button',{name:'Enable',exact:true}).click();
-  await expect(card.getByText('Active',{exact:true})).toBeVisible({timeout:15000});
+  await expect(async () => { await page.getByRole('button', { name: 'Refresh workspace' }).click(); await expect(card.getByText('Active',{exact:true})).toBeVisible({timeout:1000}); }).toPass({timeout:15000});
   await card.getByRole('link',{name:'Open module'}).click();
   const greeting=`Hello ${test.info().project.name} ${Date.now()}`;
   await page.getByLabel('Greeting',{exact:true}).fill(greeting);
@@ -104,8 +104,32 @@ test('a separate module saves settings, runs a job, and reads its own persisted 
   await page.screenshot({path:`test-results/module-${test.info().project.name}.png`,fullPage:true});
   await page.getByRole('link',{name:/^Modules/}).click();
   await card.getByRole('button',{name:'Disable',exact:true}).click();
-  await expect(card.getByText('Disabled',{exact:true})).toBeVisible({timeout:15000});
+  await expect(async () => { await page.getByRole('button', { name: 'Refresh workspace' }).click(); await expect(card.getByText('Disabled',{exact:true})).toBeVisible({timeout:1000}); }).toPass({timeout:15000});
   await card.getByRole('link',{name:'Open module'}).click();
   await expect(page.getByRole('button',{name:'Remember greeting',exact:true})).toBeDisabled();
   expect(errors).toEqual([]);
+});
+
+test('overview shares a single workspace refresh and keeps dirty logging settings', async ({ page }) => {
+  await page.clock.install();
+  const reads: string[] = [];
+  page.on('request', request => { if (request.url().includes('/api/') && request.method() === 'GET') reads.push(new URL(request.url()).pathname); });
+  await page.goto('/auth/demo');
+  await expect(page.getByRole('heading', { name: 'Your community, at a glance.' })).toBeVisible();
+  expect(reads).toEqual(['/api/workspace']);
+  for (let minute = 1; minute <= 3; minute++) {
+    await page.clock.runFor(60000);
+    await expect.poll(() => reads.length).toBe(minute + 1);
+    await expect(page.getByRole('button', { name: 'Refresh workspace' })).toBeEnabled();
+  }
+  await page.getByRole('button', { name: 'Refresh workspace' }).click();
+  await expect.poll(() => reads.length).toBe(5);
+  expect(reads.every(path => path === '/api/workspace')).toBe(true);
+  await page.getByRole('link', { name: 'Configure logging' }).click();
+  const toggle = page.getByRole('checkbox', { name: /Message edited/ });
+  const previous = await toggle.isChecked(); await toggle.setChecked(!previous);
+  await page.getByRole('button', { name: 'Refresh workspace' }).click();
+  await expect(page.getByText('Unsaved changes', { exact: true })).toBeVisible();
+  expect(await toggle.isChecked()).toBe(!previous);
+  await page.screenshot({ path: `test-results/workspace-budget-${test.info().project.name}.png`, fullPage: true });
 });

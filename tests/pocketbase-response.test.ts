@@ -35,8 +35,31 @@ it('still relinquishes worker ownership immediately when a renewal is rate limit
   const lost = vi.fn();
   const db = adapter();
   const release = await db.singleton('guild', lost);
-  await vi.advanceTimersByTimeAsync(10000);
+  await vi.advanceTimersByTimeAsync(20000);
   expect(lost).toHaveBeenCalledTimes(1);
   await expect(release()).rejects.toMatchObject({ code: 'STORAGE_RATE_LIMIT' });
   expect(fetch).toHaveBeenCalledTimes(2);
+});
+
+it('fails closed if a successful renewal arrives after the local ownership deadline', async () => {
+  vi.useFakeTimers();
+  let renewal: ((response: Response) => void) | undefined;
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ data: true })))
+    .mockImplementationOnce(() => new Promise<Response>(resolve => { renewal = resolve; }))
+    .mockResolvedValue(new Response(JSON.stringify({ data: null }))));
+  const db = adapter(), lost = vi.fn(), release = await db.singleton('guild', lost);
+  await vi.advanceTimersByTimeAsync(20000);
+  expect(renewal).toBeDefined();
+  await vi.advanceTimersByTimeAsync(26000);
+  renewal!(new Response(JSON.stringify({ data: true })));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(lost).toHaveBeenCalledOnce();
+  await release();
+});
+
+it('requires upgraded hooks instead of silently returning to the old polling budget', async () => {
+  const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: { protocol: 1 } })));
+  vi.stubGlobal('fetch', fetch);
+  await expect(adapter().scope('guild').initialize('Test', [])).rejects.toThrow('Update the PocketBase storage hooks');
+  expect(fetch).toHaveBeenCalledTimes(1);
 });

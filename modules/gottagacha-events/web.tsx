@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CalendarDays, RefreshCw } from 'lucide-react';
-import { api, useSession } from '../../apps/dashboard/src/api.js';
+import { api, useSession, useWorkspace, workspaceQueryKey } from '../../apps/dashboard/src/api.js';
 import { SectionTitle, Notice, Badge, Empty } from '../../packages/ui/src/index.js';
-import type { ModuleState, CatalogChannel } from '../../packages/module-sdk/src/browser.js';
+import type { CatalogChannel } from '../../packages/module-sdk/src/browser.js';
 import type { ModuleRecord } from '../../packages/module-sdk/src/services.js';
 import { definition, type EventSettings } from './definition.js';
 import { eventTime, upcoming, type AnnouncementPreview, type FixtureSnapshot } from './fixtures.js';
@@ -15,7 +15,7 @@ type Job = { state: string; error: string | null; result: { message: string } | 
 const root = '/api/modules/gottagacha-events';
 export default function EventsPage() {
   const user = useSession(), cache = useQueryClient(), admin = user.access !== 'viewer';
-  const state = useQuery({ queryKey: ['gg-events-settings'], queryFn: () => api<ModuleState>(`${root}/settings`), refetchInterval: user.demo ? 2000 : 30000 });
+  const workspace = useWorkspace(), state = { ...workspace, data: workspace.data?.modules.find(module => module.moduleId === definition.manifest.id) };
   const channels = useQuery({ queryKey: ['channels'], queryFn: () => api<CatalogChannel[]>('/api/catalog/channels') });
   const [settings, setSettings] = useState<EventSettings>(definition.defaultSettings), [revision, setRevision] = useState(0), [dirty, setDirty] = useState(false), [jobId, setJobId] = useState('');
   const [previewCursor, setPreviewCursor] = useState(''), [draftCursor, setDraftCursor] = useState('');
@@ -26,7 +26,7 @@ export default function EventsPage() {
   const previews = useQuery({ queryKey: ['gg-events-previews', previewCursor], queryFn: () => api<Page<AnnouncementPreview>>(`${root}/previews?cursor=${encodeURIComponent(previewCursor)}`), enabled: fixtureMode, refetchInterval: 2000 });
   const drafts = useQuery({ queryKey: ['gg-events-drafts', draftCursor], queryFn: () => api<Page<Draft>>(`${root}/drafts?cursor=${encodeURIComponent(draftCursor)}`), enabled: fixtureMode && admin, refetchInterval: 2000 });
   const job = useQuery({ queryKey: ['module-job', jobId], queryFn: () => api<Job>(`/api/jobs/${jobId}`), enabled: Boolean(jobId), refetchInterval: query => ['completed', 'failed', 'expired'].includes(query.state.data?.state ?? '') ? false : 1000 });
-  const save = useMutation({ mutationFn: () => api(`${root}/settings`, 'PUT', { revision, settings }), onSuccess: async () => { await cache.invalidateQueries({ queryKey: ['gg-events-settings'] }); setDirty(false); } });
+  const save = useMutation({ mutationFn: () => api(`${root}/settings`, 'PUT', { revision, settings }), onSuccess: async () => { await cache.invalidateQueries({ queryKey: workspaceQueryKey }); setDirty(false); } });
   const refresh = useMutation({ mutationFn: () => api<{ id: string }>(`${root}/refresh-fixtures`, 'POST', { key: crypto.randomUUID() }), onSuccess: value => { setJobId(value.id); setPreviewCursor(''); } });
   const active = fixtureMode && state.data?.enabled && state.data.appliedEnabled && state.data.desiredRevision === state.data.appliedRevision && !state.data.applyError;
   const pending = refresh.isPending || Boolean(jobId && !job.error && !['completed', 'failed', 'expired'].includes(job.data?.state ?? ''));

@@ -60,11 +60,12 @@ export class PocketBaseAdapter implements StorageDriver {
       if (stopped) return;
       try {
         if (performance.now() >= validUntil || !await this.call(guildId, 'leaseRenew', { owner })) { fail(); return; }
+        if (performance.now() >= validUntil) { fail(); return; }
         validUntil = performance.now() + 45000;
       } catch { fail(); return; }
-      if (!stopped) timer = setTimeout(() => { void renew(); }, 10000);
+      if (!stopped) timer = setTimeout(() => { void renew(); }, 20000);
     };
-    timer = setTimeout(() => { void renew(); }, 10000);
+    timer = setTimeout(() => { void renew(); }, 20000);
     const release = async () => {
       stopped = true; if (timer) clearTimeout(timer); this.owners.delete(guildId); this.releases.delete(release);
       await this.call(guildId, 'leaseRelease', { owner });

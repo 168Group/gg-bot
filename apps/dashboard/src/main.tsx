@@ -1,26 +1,26 @@
 import React, { lazy, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, NavLink, Routes, Route, Link, Navigate } from 'react-router-dom';
-import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Activity, ArrowUpRight, Box, ChevronRight, CircleHelp, LayoutDashboard, LogOut, Settings, ShieldCheck, Radio, ArrowRight, SlidersHorizontal } from 'lucide-react';
 import { Badge, Empty, Notice, SectionTitle } from '../../../packages/ui/src/index.js';
-import type { ModuleInventory, UserSession } from '../../../packages/module-sdk/src/browser.js';
-import type { LogEvent } from '../../../modules/logging/shared/settings.js';
+import type { ModuleInventory } from '../../../packages/module-sdk/src/browser.js';
 import { webRegistry } from '../../../registry/web.js';
-import { api, ApiError, SessionContext, useSession, setCsrf, type Status } from './api.js';
+import { api, ApiError, SessionContext, useSession, setCsrf, useWorkspace, workspaceQueryKey } from './api.js';
 import { EventList } from '../../../modules/logging/web/EventList.js';
 import { Brand, BotWorld } from './Brand.js';
 import './style.css';
 const SetupPage = lazy(() => import('./SetupPage.js'));
 
-const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 2000 } } });
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 60000, refetchOnWindowFocus: false } } });
 const pages = webRegistry.map(module => ({ ...module, Component: lazy(module.load) }));
 function App() {
   if (location.pathname === '/setup') return <Suspense fallback={<p>Opening setup…</p>}><SetupPage/></Suspense>;
   return <AuthenticatedApp/>;
 }
 function AuthenticatedApp() {
-  const me = useQuery({ queryKey: ['me'], queryFn: () => api<UserSession>('/api/me'), refetchInterval: 60000 });
+  const workspace = useWorkspace();
+  const me = { ...workspace, data: workspace.data?.user };
   if (me.isPending) return <main className="login"><Brand/><p>Opening your server console…</p></main>;
   if (!me.data) return <main className="login"><div className="login-card"><Brand/><span className="eyebrow">YOUR COMMUNITY STARTS HERE</span><h1>A happy little home<br/>for your community.</h1><p>Your private home for server activity, connected modules, and the details that matter.</p><a className="button primary" href="/auth/discord">Continue with Discord <ArrowUpRight size={17}/></a><small>Access is limited to your server’s approved staff.</small>{me.error && !(me.error instanceof ApiError && me.error.status === 401) && <Notice error>{me.error.message}</Notice>}</div><a className="login-note" href="https://www.omoworlds.com/">Made with imagination by OMOWorlds</a></main>;
   setCsrf(me.data.csrf);
@@ -28,7 +28,7 @@ function AuthenticatedApp() {
 }
 function Shell() {
   const user = useSession(), cache = useQueryClient();
-  const modules = useQuery({ queryKey: ['modules'], queryFn: () => api<ModuleInventory[]>('/api/modules'), refetchInterval: 5000 });
+  const workspace = useWorkspace(), modules = { ...workspace, data: workspace.data?.modules };
   const logout = useMutation({ mutationFn: () => api('/auth/logout', 'POST', {}), onSuccess: () => { cache.clear(); location.assign('/'); } });
   return <div className="app-shell"><a className="skip-link" href="#main">Skip to content</a><aside className="sidebar">
     <Link className="brand" to="/"><Brand/></Link>
@@ -36,14 +36,13 @@ function Shell() {
     <nav aria-label="Main navigation"><span className="nav-label">WORKSPACE</span><NavLink to="/" end><LayoutDashboard size={18}/>Overview</NavLink><NavLink to="/modules" end><Box size={18}/>Modules<span className="nav-count">{modules.data?.length ?? '…'}</span></NavLink><span className="nav-label modules-label">YOUR MODULES</span>{pages.filter(module => modules.data?.some(m => m.moduleId === module.id)).map(module => <NavLink key={module.id} to={module.navigation.path}><Activity size={18}/>{module.navigation.label}</NavLink>)}<span className="nav-label modules-label">MANAGEMENT</span><NavLink to="/settings"><Settings size={18}/>Settings</NavLink></nav>
     <div className="sidebar-bottom"><div className="scope-note"><ShieldCheck size={18}/><p>Your own little world.<br/><strong>We’ll help you care for it.</strong></p></div><div className="profile"><span className="avatar">{user.label.slice(0, 1)}</span><div><strong>{user.label}</strong><span>{user.access}</span></div><button className="icon-button" aria-label="Sign out" onClick={() => logout.mutate()} disabled={logout.isPending}><LogOut size={16}/></button></div>{logout.error && <Notice error>{logout.error.message}</Notice>}</div>
   </aside><div className="workspace"><div className="topbar"><span>{user.communityName}<ChevronRight size={13}/><strong>Server console</strong></span><span><span className="private-dot"/>Private deployment<CircleHelp size={17}/></span></div>{user.demo && <div className="demo-banner">LOCAL DEMO <span>Fixture activity · no Discord connection · changes stay in the demo database</span></div>}
-    <main id="main">{modules.error && <Notice error>{modules.error.message}</Notice>}<Suspense fallback={<p className="loading">Loading module…</p>}><Routes><Route path="/" element={<Overview/>}/><Route path="/modules" element={<Modules/>}/><Route path="/settings" element={<SettingsPage/>}/>{pages.map(({ id, navigation, Component }) => <Route key={id} path={`${navigation.path}/*`} element={modules.data?.some(m => m.moduleId === id) ? <Component/> : modules.isPending ? <p>Loading modules…</p> : <Empty title="Module unavailable">This module is not installed for your workspace.</Empty>}/>) }<Route path="*" element={<Navigate to="/" replace/>}/></Routes></Suspense></main><footer>{user.botName}<a href="https://www.omoworlds.com/">Made with imagination by OMOWorlds</a><span>v0.2 · Activity logging</span></footer></div></div>;
+    <main id="main"><div className="workspace-refresh"><span>Refreshes every minute{workspace.dataUpdatedAt ? ` · Updated ${new Date(workspace.dataUpdatedAt).toLocaleTimeString()}` : ''}</span><button onClick={() => { void workspace.refetch(); }} disabled={workspace.isFetching}>Refresh workspace</button></div>{modules.error && <Notice error>{modules.error.message}</Notice>}<Suspense fallback={<p className="loading">Loading module…</p>}><Routes><Route path="/" element={<Overview/>}/><Route path="/modules" element={<Modules/>}/><Route path="/settings" element={<SettingsPage/>}/>{pages.map(({ id, navigation, Component }) => <Route key={id} path={`${navigation.path}/*`} element={modules.data?.some(m => m.moduleId === id) ? <Component/> : modules.isPending ? <p>Loading modules…</p> : <Empty title="Module unavailable">This module is not installed for your workspace.</Empty>}/>) }<Route path="*" element={<Navigate to="/" replace/>}/></Routes></Suspense></main><footer>{user.botName}<a href="https://www.omoworlds.com/">Made with imagination by OMOWorlds</a><span>v0.2 · Activity logging</span></footer></div></div>;
 }
 function Overview() {
   const user = useSession();
-  const status = useQuery({ queryKey: ['status'], queryFn: () => api<Status>('/api/status'), refetchInterval: 5000 });
-  const modules = useQuery({ queryKey: ['modules'], queryFn: () => api<ModuleInventory[]>('/api/modules') });
+  const workspace = useWorkspace(), status = { ...workspace, data: workspace.data?.status }, modules = { ...workspace, data: workspace.data?.modules };
   const hasLogging = modules.data?.some(m => m.moduleId === 'logging') ?? false;
-  const events = useQuery({ queryKey: ['recent-events'], queryFn: () => api<{ events: LogEvent[] }>('/api/modules/logging/events?limit=5'), refetchInterval: 10000, enabled: hasLogging });
+  const events = { ...workspace, data: workspace.data ? { events: workspace.data.events } : undefined };
   const pending = status.data?.queue.filter(row => ['pending', 'sending'].includes(row.state)).reduce((sum, row) => sum + row.count, 0) ?? 0;
   const blocked = status.data?.queue.filter(row => ['failed', 'blocked'].includes(row.state)).reduce((sum, row) => sum + row.count, 0) ?? 0;
   return <><SectionTitle eyebrow="WORKSPACE / OVERVIEW" title="Your community, at a glance." description={`A little home for everything happening in ${user.communityName}.`} action={hasLogging && <Link className="button secondary" to="/modules/logging/routing"><SlidersHorizontal size={15}/>Configure logging</Link>}/>
@@ -56,8 +55,8 @@ function Overview() {
 function Metric({ label, value, note, icon }: { label: string; value: string; note: string; icon: React.ReactNode }) { return <div className="metric"><div><span>{label}</span>{icon}</div><strong>{value}</strong><small>{note}</small></div>; }
 function Modules() {
   const user = useSession(), cache = useQueryClient();
-  const modules = useQuery({ queryKey: ['modules'], queryFn: () => api<ModuleInventory[]>('/api/modules'), refetchInterval: 2000 });
-  const change = useMutation({ mutationFn: (module: ModuleInventory) => api(`/api/modules/${module.moduleId}/state`, 'PATCH', { revision: module.desiredRevision, enabled: !module.enabled }), onSuccess: () => cache.invalidateQueries({ queryKey: ['modules'] }) });
+  const workspace = useWorkspace(), modules = { ...workspace, data: workspace.data?.modules };
+  const change = useMutation({ mutationFn: (module: ModuleInventory) => api(`/api/modules/${module.moduleId}/state`, 'PATCH', { revision: module.desiredRevision, enabled: !module.enabled }), onSuccess: () => cache.invalidateQueries({ queryKey: workspaceQueryKey }) });
   return <><SectionTitle eyebrow="WORKSPACE / MODULES" title="Make room for more." description="Independent tools, one connected workspace. Enable only what your community needs."/>{change.error && <Notice error>{change.error.message}</Notice>}{modules.error && <Notice error>{modules.error.message}</Notice>}<div className="module-grid">{modules.data?.map(module => <article className="panel module-card" key={module.moduleId}><div className="module-card-top"><span className="module-icon"><Activity size={24}/></span><Badge tone={module.applyError ? 'bad' : module.desiredRevision !== module.appliedRevision ? 'warn' : module.appliedEnabled ? 'good' : 'neutral'}>{module.applyError ? 'Apply failed' : module.desiredRevision !== module.appliedRevision ? 'Pending' : module.appliedEnabled ? 'Active' : 'Disabled'}</Badge></div><h2>{module.manifest.name}</h2><p>{module.manifest.description}</p><p className="module-requirements">{module.manifest.dependencies.length ? `Requires: ${module.manifest.dependencies.join(', ')}. ` : ''}{module.manifest.requiredIntents.length ? `Discord events: ${module.manifest.requiredIntents.join(', ')}.` : 'No extra Discord events required.'}</p><span className="tiny-label">VERSION {module.manifest.version} · REVISION {module.appliedRevision}/{module.desiredRevision}</span>{module.applyError && <Notice error>{module.applyError}</Notice>}<div className="module-actions">{webRegistry.some(entry => entry.id === module.moduleId) ? <Link className="button secondary" to={`/modules/${module.moduleId}`}>Open module <ArrowUpRight size={15}/></Link> : <small>No dashboard page installed.</small>}<button disabled={user.access === 'viewer' || change.isPending} onClick={() => change.mutate(module)}>{module.enabled ? 'Disable' : 'Enable'}</button></div><small>Disabling waits for the worker. A send already in flight may finish.</small></article>)}</div></>;
 }
 function SettingsPage() {

@@ -11,7 +11,7 @@ export default function LiveEventsPanel({ state, dirty }: { state: ModuleState |
   const [now, setNow] = useState(Date.now);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
   const active = state?.enabled && state.appliedEnabled && !state.applyError && state.desiredRevision === state.appliedRevision;
-  const snapshot = useQuery({ queryKey: ['gg-events-api', state?.appliedRevision], queryFn: () => api<LiveView | null>('/api/modules/gottagacha-events/api-snapshot'), refetchInterval: 30000 });
+  const snapshot = useQuery({ queryKey: ['gg-events-api', state?.appliedRevision], queryFn: () => api<LiveView | null>('/api/modules/gottagacha-events/api-snapshot') });
   const [jobId, setJobId] = useState('');
   const job = useQuery({ queryKey: ['module-job', jobId], queryFn: () => api<Job>(`/api/jobs/${jobId}`), enabled: Boolean(jobId), refetchInterval: query => ['completed', 'failed', 'expired'].includes(query.state.data?.state ?? '') ? false : 3000 });
   useEffect(() => { if (job.data && ['completed', 'failed', 'expired'].includes(job.data.state)) void cache.invalidateQueries({ queryKey: ['gg-events-api'] }); }, [job.data, cache]);
@@ -25,7 +25,7 @@ export default function LiveEventsPanel({ state, dirty }: { state: ModuleState |
     <p>Public events only, using America/Detroit venue times. Refreshes are manual. Announcements, member actions and publishing remain unavailable.</p>
     <button className="primary" disabled={user.access === 'viewer' || !active || dirty || pending || Boolean(cooldown)} onClick={() => run.mutate()}><RefreshCw size={16}/>Refresh from GottaGacha</button>
     {!active && <Notice>Enable the module and wait for its settings to apply. The bot service needs its declared API key with events:read scope.</Notice>}
-    {cooldown && <small>A refresh cooldown is active. This page checks again every 30 seconds.</small>}
+    {cooldown && <small>You can refresh again when the cooldown ends.</small>}
     {snapshot.isPending && <p>Loading event information…</p>}
     {pending && <Notice>Waiting for the bot to read the upcoming week…</Notice>}
     {[snapshot.error, job.error, run.error].filter(Boolean).map((error, index) => <Notice error key={index}>{error!.message}</Notice>)}

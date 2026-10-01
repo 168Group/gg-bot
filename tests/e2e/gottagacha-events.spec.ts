@@ -7,15 +7,15 @@ test('staff can browse fixtures, replay refreshes and see safe draft guidance', 
   const card = page.locator('article').filter({ has: page.getByRole('heading', { name: 'GottaGacha events', exact: true }) });
   await expect(card).toBeVisible();
   if (await card.getByRole('button', { name: 'Enable', exact: true }).count()) await card.getByRole('button', { name: 'Enable', exact: true }).click();
-  await expect(card.getByText('Active', { exact: true })).toBeVisible({ timeout: 15000 });
+  await expect(async () => { await page.getByRole('button', { name: 'Refresh workspace' }).click(); await expect(card.getByText('Active', { exact: true })).toBeVisible({ timeout: 1000 }); }).toPass({ timeout: 15000 });
   await card.getByRole('link', { name: 'Open module' }).click();
   await expect(page.getByRole('heading', { name: 'A little more to look forward to.' })).toBeVisible();
   await page.getByLabel('Event source').selectOption('fixtures');
-  await page.waitForResponse(response => response.url().endsWith('/api/modules/gottagacha-events/settings'));
+  await page.getByRole('button', { name: 'Refresh workspace' }).click();
   await expect(page.getByLabel('Event source')).toHaveValue('fixtures');
   await page.getByRole('button', { name: 'Save event settings' }).click();
   const refresh = page.getByRole('button', { name: 'Refresh sample events' });
-  await expect(refresh).toBeEnabled({ timeout: 15000 }); await refresh.click();
+  await expect(async () => { await page.getByRole('button', { name: 'Refresh workspace' }).click(); await expect(refresh).toBeEnabled({ timeout: 1000 }); }).toPass({ timeout: 15000 }); await refresh.click();
   await expect(page.getByText(/Job completed: Fixture refresh complete/)).toBeVisible({ timeout: 15000 });
   await expect(page.getByRole('heading', { name: 'Sample community game night', exact: true })).toBeVisible();
   await expect(page.locator('.gg-preview-grid article')).toHaveCount(3);
@@ -44,7 +44,13 @@ test('API browsing displays only a fresh snapshot and expires it without waiting
   const snapshot = { source: 'api', state: 'ready', settingsRevision: 5, refreshedAt: new Date(now).toISOString(), freshUntil: now + 300000, nextRefreshAt: now + 60000, window,
     events: [{ key: 'sample', id: 'sample', title: 'Synthetic API gathering', eventDate: window.startDate, startTime: '18:30:00', endTime: null, location: 'Synthetic Warren venue', updatedAt: new Date(now).toISOString() }], publicOccurrenceCount: 1, truncated: false, message: 'Synthetic browser fixture, no API request.' };
   await page.clock.install({ time: now });
-  await page.route('**/api/modules/gottagacha-events/settings', route => route.fulfill({ json: { data: { moduleId: 'gottagacha-events', settingsVersion: 2, enabled: true, appliedEnabled: true, desiredRevision: 5, appliedRevision: 5, settings: { mode: 'api-readonly', staffChannelIds: [] }, appliedSettings: { mode: 'api-readonly', staffChannelIds: [] }, applyError: null } } }));
+  const reads: string[] = [];
+  page.on('request', request => { if (request.method() === 'GET' && request.url().includes('/api/')) reads.push(new URL(request.url()).pathname); });
+  await page.route('**/api/workspace', async route => {
+    const response = await route.fetch(), json = await response.json();
+    Object.assign(json.data.modules.find((module: { moduleId: string }) => module.moduleId === 'gottagacha-events'), { settingsVersion: 2, enabled: true, appliedEnabled: true, desiredRevision: 5, appliedRevision: 5, settings: { mode: 'api-readonly', staffChannelIds: [] }, appliedSettings: { mode: 'api-readonly', staffChannelIds: [] }, applyError: null });
+    await route.fulfill({ json });
+  });
   await page.route('**/api/modules/gottagacha-events/api-snapshot', route => route.fulfill({ json: { data: snapshot } }));
   await page.goto('/auth/demo'); await page.goto('/modules/gottagacha-events');
   await expect(page.getByRole('heading', { name: 'Synthetic API gathering' })).toBeVisible();
@@ -61,5 +67,7 @@ test('API browsing displays only a fresh snapshot and expires it without waiting
   await page.clock.fastForward(300000);
   await expect(page.getByRole('heading', { name: 'Synthetic API gathering' })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Current events need a refresh.' })).toBeVisible();
+  expect(reads.filter(path => path.endsWith('/settings'))).toEqual([]);
+  expect(reads.filter(path => path.endsWith('/api-snapshot'))).toHaveLength(1);
   expect(errors).toEqual([]);
 });

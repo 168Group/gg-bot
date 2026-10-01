@@ -57,6 +57,17 @@ export async function createServer(options: ServerOptions) {
   app.get('/health/ready', async (_request, reply) => {
     try { await store.ready(); return { ok: true }; } catch { return reply.code(503).send({ ok: false }); }
   });
+  const presentStatus = (status: import('../../../packages/db/src/contracts.js').StorageStatus) => {
+    const row = status.health, logging = modules.some(m => m.manifest.id === 'logging');
+    return { ...status, storageProvider: db.kind, online: Boolean(row && Date.now() - new Date(row.heartbeat).getTime() < 90000 && row.status !== 'offline'),
+      capabilities: { channels: logging, members: logging, roles: logging, messages: logging, voice: logging, moderation: false } };
+  };
+  app.get('/api/workspace', async request => {
+    const user = await auth.authorize(request);
+    const snapshot = await store.call('dashboardSnapshot', { moduleIds: modules.map(m => m.manifest.id) });
+    return { data: { user, status: presentStatus(snapshot.status), events: snapshot.events,
+      modules: modules.map(module => ({ manifest: module.manifest, ...snapshot.modules.find(state => state.moduleId === module.manifest.id)! })) } };
+  });
   app.get('/api/me', async request => ({ data: await auth.authorize(request) }));
   app.get('/api/modules', async request => {
     await auth.authorize(request);
@@ -84,9 +95,7 @@ export async function createServer(options: ServerOptions) {
   app.get('/api/status', async request => {
     await auth.authorize(request);
     const status = await store.call('status', {});
-    const row = status.health;
-    return { data: { ...status, storageProvider: db.kind, online: Boolean(row && Date.now() - new Date(row.heartbeat).getTime() < 60000 && row.status !== 'offline'),
-      capabilities: { channels: modules.some(m => m.manifest.id === 'logging'), members: modules.some(m => m.manifest.id === 'logging'), roles: modules.some(m => m.manifest.id === 'logging'), messages: modules.some(m => m.manifest.id === 'logging'), voice: modules.some(m => m.manifest.id === 'logging'), moderation: false } } };
+    return { data: presentStatus(status) };
   });
   app.get('/api/catalog/channels', async request => { await auth.authorize(request); return { data: await store.catalog() }; });
   app.get('/api/catalog/roles', async request => { await auth.authorize(request); return { data: await store.call('rolesGet', {}) }; });

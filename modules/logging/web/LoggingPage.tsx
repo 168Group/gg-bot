@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, NavLink, Route, Routes, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, ArrowRight, Send, Check, RefreshCw } from 'lucide-react';
-import { api, useSession, type Status } from '../../../apps/dashboard/src/api.js';
+import { api, useSession, useWorkspace, workspaceQueryKey } from '../../../apps/dashboard/src/api.js';
 import { Badge, Empty, Notice, SectionTitle } from '../../../packages/ui/src/index.js';
 import type { CatalogChannel, ModuleState } from '../../../packages/module-sdk/src/browser.js';
 import { eventLabels as labels, eventGroups, eventTypes, loggingSettingsSchema, type LogEvent, type LoggingEventType, type LoggingSettings } from '../shared/settings.js';
@@ -17,8 +17,8 @@ export default function LoggingPage() {
 function Events() {
   const [type, setType] = useState(''), [cursor, setCursor] = useState<string | null>(null);
   const params = new URLSearchParams({ limit: '50', ...(type ? { type } : {}), ...(cursor ? { cursor } : {}) });
-  const events = useQuery({ queryKey: ['events', type, cursor], queryFn: () => api<{ events: LogEvent[]; nextCursor: string | null }>(`/api/modules/logging/events?${params}`), refetchInterval: 10000 });
-  return <section className="panel"><div className="panel-heading"><div><h2>Event stream</h2><p>Observed activity, with the context we can confirm.</p></div><label className="filter-label">Event type<select aria-label="Event type" value={type} onChange={event => { setType(event.target.value); setCursor(null); }}><option value="">All events</option>{Object.entries(labels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label></div>{events.error && <Notice error>{events.error.message}</Notice>}{events.isPending ? <p className="loading">Loading events…</p> : <EventList events={events.data?.events ?? []}/>}<div className="list-footer"><span>Times shown in your local timezone · refreshes every 10 seconds</span>{cursor && <button onClick={() => setCursor(null)}>Newest</button>}{events.data?.nextCursor && <button onClick={() => setCursor(events.data!.nextCursor)}>Older events <ArrowRight size={14}/></button>}</div></section>;
+  const events = useQuery({ queryKey: ['events', type, cursor], queryFn: () => api<{ events: LogEvent[]; nextCursor: string | null }>(`/api/modules/logging/events?${params}`), refetchInterval: false });
+  return <section className="panel"><div className="panel-heading"><div><h2>Event stream</h2><p>Observed activity, with the context we can confirm.</p></div><label className="filter-label">Event type<select aria-label="Event type" value={type} onChange={event => { setType(event.target.value); setCursor(null); }}><option value="">All events</option>{Object.entries(labels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label></div>{events.error && <Notice error>{events.error.message}</Notice>}{events.isPending ? <p className="loading">Loading events…</p> : <EventList events={events.data?.events ?? []}/>}<div className="list-footer"><span>Times shown in your local timezone · refresh to load newest events</span><button disabled={events.isFetching} onClick={() => { void events.refetch(); }}>Refresh events</button>{cursor && <button onClick={() => setCursor(null)}>Newest</button>}{events.data?.nextCursor && <button onClick={() => setCursor(events.data!.nextCursor)}>Older events <ArrowRight size={14}/></button>}</div></section>;
 }
 function Detail() {
   const { eventId } = useParams();
@@ -31,13 +31,13 @@ function Detail() {
 }
 function Configuration({ section }: { section: 'routing' | 'exclusions' | 'retention' }) {
   const user = useSession(), cache = useQueryClient();
-  const state = useQuery({ queryKey: ['logging-settings'], queryFn: () => api<ModuleState>('/api/modules/logging/settings'), refetchInterval: 2000 });
+  const workspace = useWorkspace(), state = { ...workspace, data: workspace.data?.modules.find(m => m.moduleId === 'logging') };
   const channels = useQuery({ queryKey: ['channels'], queryFn: () => api<CatalogChannel[]>('/api/catalog/channels') });
   const [draft, setDraft] = useState<LoggingSettings | null>(null), [revision, setRevision] = useState(0), [dirty, setDirty] = useState(false), [saved, setSaved] = useState(false);
   const [previewType, setPreviewType] = useState<LoggingEventType>('channel.created');
   const [preview, setPreview] = useState<PreviewEmbed | null>(null);
   useEffect(() => { if (state.data && !dirty) { setDraft(loggingSettingsSchema.parse(state.data.settings)); setRevision(state.data.desiredRevision); } }, [state.data, dirty]);
-  const save = useMutation({ mutationFn: () => api<ModuleState>('/api/modules/logging/settings', 'PUT', { revision, settings: draft }), onSuccess: data => { cache.setQueryData(['logging-settings'], data); setDirty(false); setSaved(true); void cache.invalidateQueries({ queryKey: ['modules'] }); } });
+  const save = useMutation({ mutationFn: () => api<ModuleState>('/api/modules/logging/settings', 'PUT', { revision, settings: draft }), onSuccess: () => { setDirty(false); setSaved(true); void cache.invalidateQueries({ queryKey: workspaceQueryKey }); } });
   const showPreview = useMutation({ mutationFn: () => api<{ embeds: NonNullable<typeof preview>[] }>('/api/modules/logging/preview', 'POST', { settings: draft, type: previewType }), onSuccess: data => setPreview(data.embeds[0] ?? null) });
   const edit = (patch: Partial<LoggingSettings>) => { if (draft) { setDraft({ ...draft, ...patch }); setDirty(true); setSaved(false); } };
   if (state.error) return <Notice error>{state.error.message}</Notice>;
@@ -54,9 +54,9 @@ function Configuration({ section }: { section: 'routing' | 'exclusions' | 'reten
 }
 function Diagnostics() {
   const user = useSession();
-  const status = useQuery({ queryKey: ['status'], queryFn: () => api<Status>('/api/status'), refetchInterval: 5000 });
+  const workspace = useWorkspace(), status = { ...workspace, data: workspace.data?.status };
   const [jobId, setJobId] = useState<string | null>(null);
   const run = useMutation({ mutationFn: (type: string) => api<{ jobId: string }>(`/api/modules/logging/${type}`, 'POST', { key: crypto.randomUUID() }), onSuccess: data => setJobId(data.jobId) });
-  const job = useQuery({ queryKey: ['job', jobId], queryFn: () => api<{ state: string; result: { message: string } | null; error: string | null }>(`/api/jobs/${jobId}`), enabled: !!jobId, refetchInterval: query => ['completed', 'failed', 'expired'].includes(query.state.data?.state ?? '') ? false : 2000 });
+  const job = useQuery({ queryKey: ['job', jobId], queryFn: () => api<{ state: string; result: { message: string } | null; error: string | null }>(`/api/jobs/${jobId}`), enabled: !!jobId, refetchInterval: query => query.state.error || ['completed', 'failed', 'expired'].includes(query.state.data?.state ?? '') ? false : 10000 });
   return <section className="panel diagnostics"><div className="panel-heading"><div><h2>Know where things stand.</h2><p>Delivery checks run on the bot, even when the dashboard is a separate process.</p></div><Badge tone={status.data?.online ? 'good' : 'warn'}>{user.demo ? 'Simulated worker' : status.data?.online ? 'Worker connected' : 'Worker offline'}</Badge></div>{status.error && <Notice error>{status.error.message}</Notice>}<div className="diagnostic-actions"><button className="primary" disabled={user.access === 'viewer' || run.isPending} onClick={() => run.mutate('test')}><Send size={15}/>Send test log</button><button disabled={user.access === 'viewer' || run.isPending} onClick={() => run.mutate('diagnostics')}><RefreshCw size={15}/>Check destination</button></div><p>Enable logging and wait for its settings to apply first. Requests expire after five minutes; an offline bot will not post old test requests later.</p>{run.error && <Notice error>{run.error.message}</Notice>}{job.error && <Notice error>{job.error.message}</Notice>}{jobId && <Notice error={job.data?.state === 'failed'}>Job {job.data?.state ?? 'pending'}: {job.data?.error ?? job.data?.result?.message ?? 'Waiting for the worker.'}</Notice>}<h3>Recorded coverage gaps</h3>{!status.data?.incidents.length ? <Empty title="No gaps recorded">This is not a guarantee of complete coverage. Coverage includes channels, message edits/deletions, nicknames, member roles and voice joins/leaves. Offline activity and uncached previous values cannot be reconstructed.</Empty> : status.data.incidents.map(incident => <div className="incident" key={incident.id}><time>{new Date(incident.started_at).toLocaleString()}</time><p>{incident.reason}</p><small>{incident.dropped_count === null ? 'Dropped count unknown' : `${incident.dropped_count} observations not committed`}</small></div>)}</section>;
 }

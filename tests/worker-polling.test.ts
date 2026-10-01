@@ -10,7 +10,7 @@ it('stops an idle delivery batch after one actual storage claim', async () => {
   const send = vi.fn();
   const worker = new DeliveryWorker(new LoggingRepository(store), { validate: vi.fn(), find: vi.fn(), send });
   await worker.drain();
-  expect(call).toHaveBeenCalledExactlyOnceWith('guild', 'deliveryClaim', {});
+  expect(call).toHaveBeenCalledExactlyOnceWith('guild', 'deliveryPrepare', {});
   expect(send).not.toHaveBeenCalled();
 });
 

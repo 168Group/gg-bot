@@ -1,11 +1,13 @@
 import { postgresResources } from './postgres-resources.js';
 import { resourceSchemas } from './module-resources.js';
+import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { PostgresDatabase, PostgresGuildStore } from './postgres.js';
 import { PostgresLoggingRepository, eventFilter } from './postgres-logging.js';
 import { GuildStore } from './index.js';
 import type { Operations, StorageDriver, JobRecord, DeliveryClaim, SessionRecord, StorageStatus } from './contracts.js';
 import { HttpError } from '../../core/src/access.js';
+const moduleIds = z.array(z.string().regex(/^[a-z][a-z0-9-]{0,31}$/)).max(100).transform(ids => [...new Set(ids)]);
 type Handlers = { [K in keyof Operations]: (input: Operations[K]['input']) => Promise<Operations[K]['output']> };
 function json<T>(data: T): T { return JSON.parse(JSON.stringify(data)) as T; }
 export class PostgresAdapter extends PostgresDatabase implements StorageDriver {
@@ -15,6 +17,25 @@ export class PostgresAdapter extends PostgresDatabase implements StorageDriver {
     const core = new PostgresGuildStore(this, guild), logs = new PostgresLoggingRepository(core);
     const handlers: Handlers = {
       ...postgresResources(this, guild),
+      workerPoll: async input => {
+        const ids = moduleIds.parse(input.moduleIds), jobs = moduleIds.parse(input.jobModuleIds);
+        const modules = await Promise.all(ids.map(id => core.getModule(id)));
+        await core.heartbeat(input.status, input.details);
+        const due = await this.query(`SELECT id FROM core_job WHERE guild_id=$1 AND module_id=ANY($2::text[]) AND expires_at>now() AND due_at<=now() AND (state='pending' OR (state='sending' AND lease_until<now())) LIMIT 1`, [guild, jobs]);
+        const deliveries = ids.includes('logging') ? await this.query(`SELECT d.id FROM logging_delivery d JOIN logging_event e ON e.id=d.event_id AND e.guild_id=d.guild_id WHERE d.guild_id=$1 AND e.expires_at>now() AND ((d.state='pending' AND d.next_attempt<=now()) OR (d.state='sending' AND d.lease_until<now())) LIMIT 5`, [guild]) : [];
+        return { modules, jobsDue: due.length > 0, deliveriesDue: deliveries.length };
+      },
+      dashboardSnapshot: async ({ moduleIds: ids }) => {
+        const selected = moduleIds.parse(ids);
+        return { modules: await Promise.all(selected.map(id => core.getModule(id))), status: await handlers.status({}), events: selected.includes('logging') ? (await logs.list({ limit: 5 })).events : [] };
+      },
+      deliveryPrepare: async () => {
+        const delivery = await handlers.deliveryClaim({});
+        return delivery ? { delivery, event: await logs.detail(delivery.event_id), module: await core.getModule('logging') } : null;
+      },
+      deliveryVerify: async ({ id, claimToken, revision }) => (await this.query(`SELECT d.id FROM logging_delivery d JOIN logging_event e ON e.id=d.event_id AND e.guild_id=d.guild_id JOIN module_config m ON m.guild_id=d.guild_id AND m.module_id='logging'
+        WHERE d.guild_id=$1 AND d.id=$2 AND d.claim_token=$3 AND d.state='sending' AND d.lease_until>now() AND e.expires_at>now() AND m.enabled AND m.applied_enabled AND m.applied_revision=$4 AND m.desired_revision=m.applied_revision`, [guild, id, claimToken, revision])).length === 1,
+
       moduleUpgrade: async input => {
         const { id, expected, fromVersion, toVersion, settings } = resourceSchemas.moduleUpgrade.parse(input);
         if (toVersion <= fromVersion) throw new HttpError(400, 'INVALID_INPUT', 'Settings versions must advance.');
@@ -26,7 +47,7 @@ export class PostgresAdapter extends PostgresDatabase implements StorageDriver {
         });
         return core.getModule(id);
       },
-      ready: async () => { await this.query('SELECT desired_revision FROM module_config LIMIT 0'); return { protocol: 1 }; },
+      ready: async () => { await this.query('SELECT desired_revision FROM module_config LIMIT 0'); return { protocol: 1, trafficProtocol: 1 }; },
       workerVerify: async () => { await this.query('SELECT 1'); return null; },
       initialize: async ({ displayName, modules }) => {
         await this.transaction(async client => {
@@ -76,7 +97,9 @@ export class PostgresAdapter extends PostgresDatabase implements StorageDriver {
         await this.query(`INSERT INTO dashboard_session(guild_id,id_hash,user_id,label,tokens,csrf_hash,expires_at,checked_at,access)
           VALUES($1,$2,$3,$4,$5,$6,now()+interval '7 days',now(),$7)`, [guild, s.id_hash, s.user_id, s.label, s.tokens, s.csrf_hash, s.access]); return null;
       },
-      sessionGet: async ({ hash }) => (await this.query<SessionRecord>(`SELECT id_hash,user_id,label,tokens,csrf_hash,checked_at,access FROM dashboard_session WHERE guild_id=$1 AND id_hash=$2 AND expires_at>now() AND last_seen>now()-interval '24 hours'`, [guild, hash]))[0] ?? null,
+      sessionGet: async ({ hash, touch }) => (await this.query<SessionRecord>(touch
+        ? `UPDATE dashboard_session SET last_seen=now() WHERE guild_id=$1 AND id_hash=$2 AND expires_at>now() AND last_seen>now()-interval '24 hours' RETURNING id_hash,user_id,label,tokens,csrf_hash,checked_at,access`
+        : `SELECT id_hash,user_id,label,tokens,csrf_hash,checked_at,access FROM dashboard_session WHERE guild_id=$1 AND id_hash=$2 AND expires_at>now() AND last_seen>now()-interval '24 hours'`, [guild, hash]))[0] ?? null,
       sessionRefresh: async ({ hash, tokens, access }) => { await this.query('UPDATE dashboard_session SET tokens=$3,access=$4,checked_at=now() WHERE guild_id=$1 AND id_hash=$2', [guild, hash, tokens, access]); return null; },
       sessionTouch: async ({ hash }) => { await this.query('UPDATE dashboard_session SET last_seen=now() WHERE guild_id=$1 AND id_hash=$2', [guild, hash]); return null; },
       sessionDelete: async ({ hash }) => { await this.query('DELETE FROM dashboard_session WHERE guild_id=$1 AND id_hash=$2', [guild, hash]); return null; },

@@ -1,4 +1,4 @@
-import { runModuleJobs } from '../../../packages/core/src/jobs.js';
+import { WorkerCycle, pocketHostPollMs } from '../../../packages/core/src/worker-cycle.js';
 import { installedDefinitions } from '../../../registry/definitions.js';
 import { requiredIntents } from '../../../packages/core/src/module-commands.js';
 import { randomUUID } from 'node:crypto';
@@ -19,7 +19,7 @@ export async function startBot(config: Config, token: string, startupWaitMs = 12
   const db = openStorage(config), store = db.scope(config.DISCORD_GUILD_ID);
   // PocketHost applies hourly per-IP caps even to paid instances. Keep idle polling modest.
   const pocketHost = config.STORAGE_PROVIDER === 'pocketbase' && new URL(config.POCKETBASE_URL!).hostname.endsWith('.pockethost.io');
-  const pollMs = pocketHost ? 30000 : 2000;
+  const pollMs = pocketHost ? pocketHostPollMs : 2000;
   // Installed packages declare their intent union; changes require a reconnect.
   const client = new Client({ intents: requiredIntents(installedDefinitions(config.NODE_ENV === 'production')),
     makeCache: Options.cacheWithLimits({ ...Options.DefaultMakeCacheSettings, MessageManager: 0 }), rest: { timeout: 15000, retries: 2 } });
@@ -130,22 +130,20 @@ export async function startBot(config: Config, token: string, startupWaitMs = 12
   client.on(Events.ShardResume, () => { ready = true; });
   client.on(Events.Error, () => { ready = false; activity.clear(); console.error('Discord connection error. Check configuration and dashboard health.'); });
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let lastHeartbeat = 0, lastCleanup = 0;
+  const cycle = new WorkerCycle(store, host, modules, {
+    health: () => ({ ready, status: ready ? host.failures || dropped || missingMemberBaselines ? 'degraded' : 'online' : 'offline',
+      details: { gateway: ready, persistenceFailures: host.failures, capabilities: ['channels', 'message-edits-deletions', 'member-nicknames-roles', 'voice-joins-leaves'] } }),
+    afterSync: () => activity.syncPolicy(), catalog, deliver: limit => worker.drain(limit), loggingCleanup: () => repository.cleanup(),
+    async report() {
+      if (host.failures > reportedFailures) { await store.incident('Observation processing failed; these observations may not have been committed.', host.failures - reportedFailures); reportedFailures = host.failures; }
+      if (dropped) { await store.incident('Observation queue overflow; events were not committed.', dropped); dropped = 0; }
+      if (missingMemberBaselines) { await store.incident('Member updates arrived without a previous nickname/role snapshot; changes could not be determined.', missingMemberBaselines); missingMemberBaselines = 0; }
+    }
+  });
   const tick = async () => {
     if (stopped) return;
     try {
-      await host.sync();
-      activity.syncPolicy();
-      if (ready) { await runModuleJobs(store, host); if (host.activeModuleIds().includes('logging')) await worker.drain(); }
-      if (Date.now() - lastHeartbeat >= 14000) {
-        if (host.failures > reportedFailures) { await store.incident('Observation processing failed; these observations may not have been committed.', host.failures - reportedFailures); reportedFailures = host.failures; }
-        if (ready) await catalog();
-        await store.heartbeat(ready ? host.failures || dropped || missingMemberBaselines ? 'degraded' : 'online' : 'offline', { gateway: ready, persistenceFailures: host.failures, capabilities: ['channels', 'message-edits-deletions', 'member-nicknames-roles', 'voice-joins-leaves'] });
-        if (dropped) { await store.incident('Observation queue overflow; events were not committed.', dropped); dropped = 0; }
-        if (missingMemberBaselines) { await store.incident('Member updates arrived without a previous nickname/role snapshot; changes could not be determined.', missingMemberBaselines); missingMemberBaselines = 0; }
-        lastHeartbeat = Date.now();
-      }
-      if (Date.now() - lastCleanup >= 3600000) { await store.cleanup(); await repository.cleanup(); lastCleanup = Date.now(); }
+      await cycle.tick();
       lastStorageSuccess = Date.now();
     } catch (error) { ready = client.isReady(); console.error('Worker tick failed.', error instanceof HttpError ? error.message : 'Storage or Discord may be unavailable.'); }
     finally { if (!stopped) timer = setTimeout(() => { activeTick = tick(); }, pollMs); }
