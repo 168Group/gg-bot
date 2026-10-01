@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { ProtectedModuleApi } from '../../apps/web/src/protected-api.js';
 import { canMutate, HttpError } from '../../packages/core/src/access.js';
+import { liveView, type LiveSnapshot } from './live-model.js';
 import { definition, settingsSchema } from './definition.js';
 const id = definition.manifest.id;
 const page = z.object({ cursor: z.string().max(160).optional() }).strict();
@@ -15,6 +16,17 @@ export function registerApi(api: ProtectedModuleApi) {
     if (settingsSchema.parse((await store.getModule(id)).settings).mode !== 'fixtures') return null;
     return data.get('fixture-snapshot');
   });
+  api.route('GET', '/api-snapshot', z.object({}).strict(), async (_, { store, data }) => {
+    const state = await store.getModule(id);
+    if (settingsSchema.parse(state.settings).mode !== 'api-readonly' || !state.enabled || !state.appliedEnabled || state.applyError || state.desiredRevision !== state.appliedRevision) return null;
+    const snapshot = await data.get<LiveSnapshot>('api-snapshot');
+    return snapshot ? liveView(snapshot.value, state.appliedRevision) : null;
+  });
+  api.route('POST', '/refresh-api', z.object({ key: z.uuid() }).strict(), async (input, { store, jobs }) => {
+    const state = await store.getModule(id);
+    if (settingsSchema.parse(state.settings).mode !== 'api-readonly') throw new HttpError(409, 'API_OFF', 'Choose API read-only mode first.');
+    return { id: await jobs.enqueue('refresh-api', { revision: state.appliedRevision }, input.key, { ttlMs: 300000 }) };
+  }, true, true);
   api.route('GET', '/previews', page, async (input, { data }) => data.list({ prefix: 'preview:', cursor: input.cursor, limit: 20 }));
   api.route('GET', '/drafts', page, async (input, { data, user }) => {
     if (!canMutate(user.access)) throw new HttpError(403, 'FORBIDDEN', 'Only administrators can review staff drafts.');

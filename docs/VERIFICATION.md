@@ -58,6 +58,18 @@ Reviewed and merged downstream PR #5 (`df430287`) after the fixture foundation c
 
 The base task reported successful live bot/dashboard readiness after its separate incident deployment. This task performed no production deployment. Readiness is not proof of sustained two-module capacity: nominal source-level counting suggests about 1,080 idle storage requests/hour with two installed modules before dashboard/events. Upstream budget instrumentation/batching is requested and remains a deployment gate. This estimate is not a measured load test.
 
+### Documented GottaGacha API reads
+
+The supplied events integration guide was reviewed alongside the public OpenAPI document. Baseline `pnpm check` passed before edits. Reviewed gg-bot PR #6 (`9b8c291c`) was merged separately as `7f9e14e`, preserving downstream registrations and both incident fixes. The production-registry collector regression was adjusted to initialize every installed module. The merged baseline passed before API implementation.
+
+The read-only slice passes typecheck, lint, 81 unit tests, 69 integration tests on actual PostgreSQL/PocketBase and the production build. Production/fixture builds and all 14 desktop/mobile browser cases passed. Adapter checks cover fixed-origin GET/auth headers, both date bounds, recurrence identity, explicit privacy flags, malformed/oversized responses, bounded public projection, HTTP errors, retry limits and sanitized error messages. A real local HTTP server sends headers but never finishes its response body; all three bounded attempts abort. No request was made to the authenticated live API.
+
+Provider/host checks cover missing declared secrets, no reads during settings application, scoped job execution/replay, viewer and CSRF denial, wrong-guild commands, disabled modules and stale snapshot suppression. Commands and dashboard reads never fetch the external API. Unit checks also cover optimistic concurrency, persistent cooldowns across settings changes, invalidation before refresh, failure states and Detroit date/DST boundaries. Existing fixture/draft behavior remains covered.
+
+Browser presentation fixtures explicitly label synthetic public events. The new cases verify venue-local display, cooldown expiry and hiding an expired snapshot even when repeated server responses remain unchanged. Screenshot review found settings-card clipping from the long secret variable name despite no page-level horizontal overflow. The layout and fixture-only draft guidance were refined, with an additional control-within-card assertion. After these refinements, registry synchronization, typecheck, lint, production/fixture builds and all four targeted desktop/mobile events cases passed. Both final API screenshots were visually reviewed: the secret variable wraps within the settings card and the cooldown has its own line. Screenshots are local ignored artifacts at `test-results/gg-events-api-desktop.png` and `test-results/gg-events-api-mobile.png`.
+
+This is local acceptance only. No credentialed API call, real Discord announcement, event write, hosted rollout or new storage migration/hook upload was performed. Announcements, member authorization/RSVP, uncertain-create reconciliation and the PocketHost request-budget gate remain outstanding.
+
 ### Commands
 
 Install the pinned toolchain and frozen dependencies. Run `pnpm pocketbase:install`, `pnpm exec playwright install chromium`, `pnpm check`, `pnpm pocketbase:bundle`, then `pnpm test:e2e`. Local listeners and child processes must be permitted. Do not rebuild frontend assets while tests are using them.

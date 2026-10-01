@@ -25,9 +25,10 @@ function memory() {
   return { data, records, expiry };
 }
 describe('GottaGacha fixture foundation', () => {
-  it('starts disconnected, declares no guessed secret, and filters past/cancelled samples', () => {
+  it('starts disconnected, declares the documented secret, and filters past/cancelled samples', () => {
     expect(definition.defaultSettings).toEqual({ mode: 'disconnected', staffChannelIds: [] });
-    expect(definition.manifest.requiredSecrets).toEqual([]);
+    expect(definition.manifest.requiredSecrets).toEqual(['GG_API_KEY']);
+    expect(definition.settingsMigrations[1]({ mode: 'fixtures', staffChannelIds: [] })).toEqual({ mode: 'fixtures', staffChannelIds: [] });
     expect(upcoming(fixtureEvents, now)).toHaveLength(2);
     expect(upcoming(fixtureEvents, Date.parse('2030-05-11T20:00:00Z'))).toEqual([]);
   });
@@ -77,7 +78,7 @@ describe('GottaGacha fixture foundation', () => {
   });
   it('honors guild, admin and channel boundaries, stale jobs, disable and no outbound fetch', async () => {
     const { data, records } = memory();
-    let state: ModuleState = { moduleId: definition.manifest.id, enabled: true, appliedEnabled: false, settings: { mode: 'fixtures', staffChannelIds: ['100000000000000010'] }, appliedSettings: {}, desiredRevision: 1, appliedRevision: 0, applyError: null };
+    let state: ModuleState = { moduleId: definition.manifest.id, settingsVersion: 2, enabled: true, appliedEnabled: false, settings: { mode: 'fixtures', staffChannelIds: ['100000000000000010'] }, appliedSettings: {}, desiredRevision: 1, appliedRevision: 0, applyError: null };
     const resources: ModuleResources = { data, jobs: { enqueue: vi.fn() } };
     const host = new ModuleHost('guild', [createBot({ validateDestination: vi.fn(), store: {} } as unknown as ModulePackageServices)], {
       async getModule() { return state; }, resources: () => resources,

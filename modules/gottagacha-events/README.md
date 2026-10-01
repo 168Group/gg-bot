@@ -1,6 +1,6 @@
 # GottaGacha events
 
-Downstream-only module for gg-bot. Created with `pnpm module:create gottagacha-events`. Default mode is disconnected and runtime enablement is off. The only available source is an explicitly selected fixture source. No live API endpoint, authentication scheme, member mapping or write contract is assumed.
+Downstream-only module for gg-bot. Created with `pnpm module:create gottagacha-events`. Default mode is disconnected and runtime enablement is off. Sources are explicitly selected fixture previews or documented API read-only browsing. No network request occurs on startup, settings application or a Discord command. Live reads require an administrator to request a refresh.
 
 ## Try the safe foundation
 
@@ -18,22 +18,25 @@ Location: Sample gathering space
 
 The parser requires labeled lines, an explicit timezone and matching offset. It reports missing/ambiguous fields rather than guessing. Only parsed fields and validation issues are retained for 24 hours, with author/channel IDs for review. Unrecognized raw text is not stored. Replayed message IDs reuse the same draft. Use `/events draft id:<review-id>` or the admin-only dashboard list. These are fixture drafts with no publishing path. Ordinary channel messages are ignored.
 
-## API contract gate
+## Documented API read-only browsing
 
-Ask the API owner for a documentation location or sanitized specification covering:
+The supplied events integration guide establishes `https://gottagacha.com/api/v1/events` as the authenticated GET endpoint. Public reference: [API docs](https://gottagacha.com/api/docs). The guide includes privacy fields missing from the public OpenAPI Event schema; this adapter requires explicit `isPrivate` and `isActive` booleans and fails closed when they are missing.
 
-- Confirmed environments/base origins, versioning, exact list/detail/create/change endpoints and methods.
-- Authentication: service credentials, scopes/audience, rotation, per-member delegation and staff permissions. No credentials in chat, settings, records or jobs.
-- Event field types, required/optional/null semantics, stable IDs/revisions, visibility, capacity, location, start/end, recurrence and published/draft/cancelled states.
-- Pagination order, cursor lifetime, page limits, rate limits, complete-snapshot guarantees and delta/webhook signatures.
-- Updates, cancellation/deletion tombstones, revisions, out-of-order handling and correction/reannouncement policy.
-- Timezone source, IANA zones versus offsets, DST ambiguity and all-day semantics.
-- Verified Discord-to-member linkage, consent, account unlinking/revocation, action authorization and RSVP semantics.
-- Create/update authorization, validation responses, idempotency key scope/TTL, conflict behavior and reconciliation after a timeout.
+For a separately authorized rollout, issue a least-privilege key with only `events:read`. Configure `OMO_MODULE_GOTTAGACHA_EVENTS_GG_API_KEY` privately on the **bot** service using the SDK's declared `GG_API_KEY` secret. Do not put its value in chat, dashboard settings, jobs, records or the dashboard service. Both `gg_test_` and `gg_live_` keys access the same database; the test prefix does not provide a sandbox. Fixture mode requires no key.
 
-Provide sanitized examples for list pages, empty results, changes/cancellations, unauthorized/rate-limited responses, create success, duplicate create and uncertain create reconciliation. Confirm allowed public fields before exposing data to guild members.
+Enable the module, select **GottaGacha API (read-only)**, save, and wait for applied settings. An administrator can then choose **Refresh from GottaGacha**. The worker requests today through six days ahead in America/Detroit, always supplying both inclusive date bounds so the API expands recurring events. It sends no `limit`: the API applies that option to database rows before expansion. There is no documented cursor or detail GET endpoint. `meta.total` counts source rows, not occurrences, so the dashboard describes returned public occurrences without claiming complete pagination.
 
-`requiredSecrets` deliberately remains empty until the documented authentication contract determines the actual requirements. Then declare server-side secret names through the SDK and configure values privately on the bot service; never pass them to the dashboard. There is no network client in this foundation. Future reads require deadlines, bounded retries/pages/bytes and schema validation; writes require confirmed idempotency and explicit revision-bound staff confirmation.
+The adapter accepts at most 1 MiB and 1,000 occurrences per response. Missing fields, duplicates and dates outside the requested range reject the entire response. Private and inactive events are filtered before persistence. Only public title, date/time, location, IDs and update timestamp are projected, with at most 40 occurrences and 24 KB of event data. Descriptions, creator IDs, zones and private booking content are never retained. A bounded display is labeled as a selection. Occurrence identity is `id:eventDate`, preserving multiple occurrences of a recurring series.
+
+Each GET has a ten-second deadline including the response body, at most three attempts and a 35-second overall deadline. Only network and 5xx read failures retry, with bounded backoff. Authentication/scope/schema failures do not retry. HTTP 429 honors numeric `Retry-After` and persists a cooldown of at least one minute. Every refresh has a persisted one-minute minimum cooldown, even across process restarts/settings changes. Revision checks and optimistic record updates fence stale jobs and concurrent refreshes. A job replay reuses its saved result.
+
+A refresh clears the old public projection before network work. Failure or an interrupted job leaves events unavailable. Successful results remain visible for at most five minutes and are hidden after a settings revision change or venue date rollover. The single scoped public cache record remains stored until replaced; expiry controls display, not record deletion. Dashboard reads and `/events upcoming` use only this cache. Times remain venue-local America/Detroit wall times, without inventing UTC offsets at DST transitions. Cancelled events disappear from the list, so absence is never treated as proof of cancellation. Manual refreshes deliberately avoid background polling while the PocketHost request-budget gate remains open.
+
+## Unresolved API capabilities
+
+The documented POST creates a public active event with a null creator. PATCH changes an event and DELETE cancels its entire series. The module implements none of these writes. Create requests have **no idempotency support**; a saved Discord-message-to-event mapping cannot reconcile a response lost before its event ID is saved. Confirm a supported uncertain-create reconciliation mechanism before implementing retryable publishing.
+
+The guide does not establish Discord-to-member linkage, delegated authorization, consent/revocation or RSVP endpoints. Obtain those contracts before implementing member actions. Staff draft preview parsing remains fixture-only and does not imply that API publishing is configured.
 
 ## Remaining gates
 

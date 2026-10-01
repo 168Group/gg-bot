@@ -1,4 +1,4 @@
-import { beforeAll, afterAll, describe, it, expect } from 'vitest';
+import { beforeAll, afterAll, describe, it, expect, vi } from 'vitest';
 import { localPocketBase } from '../../scripts/local-pocketbase.js';
 import { localPostgres } from '../../scripts/local-postgres.js';
 import { Database, type StorageDriver } from '../../packages/db/src/index.js';
@@ -12,6 +12,7 @@ import { createBot } from '../../modules/gottagacha-events/bot.js';
 import { refreshFixtures } from '../../modules/gottagacha-events/service.js';
 import { saveDraft } from '../../modules/gottagacha-events/drafts.js';
 import { runModuleJobs } from '../../packages/core/src/jobs.js';
+import { eventWindow, type LiveSnapshot } from '../../modules/gottagacha-events/live-model.js';
 const guild = '100000000000000001', owner = '100000000000000002', channel = '100000000000000010', viewerRole = '100000000000000004';
 const moduleId = definition.manifest.id;
 describe.each(['postgres', 'pocketbase'] as const)('GottaGacha events with %s', provider => {
@@ -46,7 +47,10 @@ describe.each(['postgres', 'pocketbase'] as const)('GottaGacha events with %s', 
       async identity() { return { id: viewer ? '100000000000000005' : owner, username: 'Fixture staff' }; },
       async membership(tokens) { return { roles: viewer ? [viewerRole] : [], tokens }; }
     } });
-    const host = new ModuleHost(guild, [createBot({ store, validateDestination: async () => {} })], store, { info() {}, error() {} });
+    const apiKey = `gg_test_${'b'.repeat(64)}`, date = eventWindow().startDate;
+    const apiReader = vi.fn(async () => ({ events: [{ key: `public:${date}`, id: 'public', title: 'Synthetic public gathering', eventDate: date, startTime: '18:00:00', endTime: null, location: 'Warren', updatedAt: new Date().toISOString() }], publicOccurrenceCount: 1, truncated: false }));
+    vi.stubEnv('OMO_MODULE_GOTTAGACHA_EVENTS_GG_API_KEY', '');
+    const host = new ModuleHost(guild, [createBot({ store, validateDestination: async () => {} }, apiReader)], store, { info() {}, error() {} });
     const login = async () => {
       const redirect = await app.inject('/auth/discord'), state = new URL(redirect.headers.location!).searchParams.get('state')!;
       const callback = await app.inject({ url: `/auth/discord/callback?code=fixture&state=${state}`, cookies: { omo_oauth: state } });
@@ -78,6 +82,42 @@ describe.each(['postgres', 'pocketbase'] as const)('GottaGacha events with %s', 
       expect((await app.inject({ url: `${root}/snapshot`, ...reader })).statusCode).toBe(200);
       expect((await app.inject({ url: `${root}/drafts`, ...reader })).statusCode).toBe(403);
       expect((await app.inject({ url: `${root}/refresh-fixtures`, method: 'POST', ...reader, payload: { key: crypto.randomUUID() } })).statusCode).toBe(403);
-    } finally { await host.stop(); await app.close(); }
+      expect(apiReader).not.toHaveBeenCalled();
+      const fixtures = await store.getModule(moduleId);
+      await store.updateModule(moduleId, fixtures.desiredRevision, owner, { settings: { mode: 'api-readonly', staffChannelIds: [] } });
+      await host.sync();
+      expect((await store.getModule(moduleId)).applyError).toContain('secret');
+      expect((await app.inject({ url: `${root}/api-snapshot`, ...session })).json().data).toBeNull();
+      expect((await app.inject({ url: `${root}/refresh-api`, method: 'POST', ...session, payload: { key: crypto.randomUUID() } })).statusCode).toBe(409);
+      vi.stubEnv('OMO_MODULE_GOTTAGACHA_EVENTS_GG_API_KEY', apiKey);
+      await host.sync();
+      expect((await store.getModule(moduleId)).applyError).toBeNull();
+      expect(apiReader).not.toHaveBeenCalled(); // No reads on enable or settings application.
+      expect((await app.inject({ url: `${root}/api-snapshot`, ...reader })).statusCode).toBe(200);
+      expect((await app.inject({ url: `${root}/refresh-api`, method: 'POST', ...reader, payload: { key: crypto.randomUUID() } })).statusCode).toBe(403);
+      expect((await app.inject({ url: `${root}/refresh-api`, method: 'POST', ...session, headers: { origin: 'http://localhost:3000', 'x-csrf-token': 'forged' }, payload: { key: crypto.randomUUID() } })).statusCode).toBe(403);
+      const liveKey = crypto.randomUUID();
+      const liveRun = () => app.inject({ url: `${root}/refresh-api`, method: 'POST', ...session, payload: { key: liveKey } });
+      const liveJob = await liveRun(); expect(liveJob.statusCode).toBe(202);
+      expect((await liveRun()).json().data.id).toBe(liveJob.json().data.id);
+      await runModuleJobs(store, host);
+      expect((await app.inject({ url: `/api/jobs/${liveJob.json().data.id}`, ...session })).json().data.state).toBe('completed');
+      expect(apiReader).toHaveBeenCalledOnce(); expect(apiReader.mock.calls[0]).toEqual([apiKey, eventWindow()]);
+      const live = await app.inject({ url: `${root}/api-snapshot`, ...reader });
+      expect(live.json().data.events[0].title).toBe('Synthetic public gathering');
+      expect(live.body).not.toContain('jobId'); expect(live.body).not.toContain(apiKey);
+      const command = { guildId: guild, userId: owner, channelId: channel, access: null, options: {} };
+      expect(await host.command('events upcoming', command)).toContain('Synthetic public gathering');
+      expect(await host.command('events upcoming', { ...command, guildId: 'other' })).toContain('does not have access');
+      expect(apiReader).toHaveBeenCalledOnce(); // Commands never call the API.
+      const data = store.resources(moduleId).data, cached = (await data.get<LiveSnapshot>('api-snapshot'))!;
+      await data.put('api-snapshot', { ...cached.value, freshUntil: Date.now() - 1 }, cached.revision);
+      expect((await app.inject({ url: `${root}/api-snapshot`, ...reader })).json().data.events).toEqual([]);
+      expect(await host.command('events upcoming', command)).not.toContain('Synthetic public gathering');
+      const current = await store.getModule(moduleId);
+      await store.updateModule(moduleId, current.desiredRevision, owner, { enabled: false }); await host.sync();
+      expect((await app.inject({ url: `${root}/api-snapshot`, ...session })).json().data).toBeNull();
+      expect((await app.inject({ url: `${root}/refresh-api`, method: 'POST', ...session, payload: { key: crypto.randomUUID() } })).statusCode).toBe(409);
+    } finally { await host.stop(); await app.close(); vi.unstubAllEnvs(); }
   });
 });

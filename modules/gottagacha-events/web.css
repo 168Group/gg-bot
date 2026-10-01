@@ -9,6 +9,12 @@
 .gg-events pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.7; margin: 0; }
 .gg-example { padding: 20px; border: 1px solid var(--border, #ddd); border-radius: 12px; }
 .gg-page-actions { display: flex; gap: 12px; }
+.gg-events fieldset > * { min-width: 0; }
+.gg-events .notice { overflow-wrap: anywhere; }
+.gg-events select { min-width: 0; width: 100%; }
+.gg-live-panel { display: grid; gap: 16px; min-width: 0; }
+.gg-live-panel > p, .gg-live-panel > .notice { margin: 0; }
+.gg-live-panel > button { justify-self: start; }
 .gg-events dl { margin: 12px 0; }
 .gg-events dt { font-size: 12px; opacity: .7; }
 .gg-events dd { margin: 0 0 8px; }

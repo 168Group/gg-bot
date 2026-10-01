@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { eventWindow } from '../../modules/gottagacha-events/live-model.js';
 test('staff can browse fixtures, replay refreshes and see safe draft guidance', async ({ page }) => {
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   await page.goto('/auth/demo');
@@ -34,5 +35,31 @@ test('staff can browse fixtures, replay refreshes and see safe draft guidance', 
   await page.getByRole('button', { name: 'Save event settings' }).click();
   await expect(refresh).toBeDisabled();
   await expect(page.getByRole('heading', { name: 'Sample community game night', exact: true })).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+test('API browsing displays only a fresh snapshot and expires it without waiting for changed server data', async ({ page }) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  const now = Date.now(), window = eventWindow(now);
+  // Browser presentation fixtures only. Provider/host tests cover the authenticated routes and job execution.
+  const snapshot = { source: 'api', state: 'ready', settingsRevision: 5, refreshedAt: new Date(now).toISOString(), freshUntil: now + 300000, nextRefreshAt: now + 60000, window,
+    events: [{ key: 'sample', id: 'sample', title: 'Synthetic API gathering', eventDate: window.startDate, startTime: '18:30:00', endTime: null, location: 'Synthetic Warren venue', updatedAt: new Date(now).toISOString() }], publicOccurrenceCount: 1, truncated: false, message: 'Synthetic browser fixture, no API request.' };
+  await page.clock.install({ time: now });
+  await page.route('**/api/modules/gottagacha-events/settings', route => route.fulfill({ json: { data: { moduleId: 'gottagacha-events', settingsVersion: 2, enabled: true, appliedEnabled: true, desiredRevision: 5, appliedRevision: 5, settings: { mode: 'api-readonly', staffChannelIds: [] }, appliedSettings: { mode: 'api-readonly', staffChannelIds: [] }, applyError: null } } }));
+  await page.route('**/api/modules/gottagacha-events/api-snapshot', route => route.fulfill({ json: { data: snapshot } }));
+  await page.goto('/auth/demo'); await page.goto('/modules/gottagacha-events');
+  await expect(page.getByRole('heading', { name: 'Synthetic API gathering' })).toBeVisible();
+  await expect(page.getByText(`${window.startDate} at 18:30:00 (America/Detroit)`, { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Refresh from GottaGacha' })).toBeDisabled();
+  await expect(page.getByText('Publishing unavailable', { exact: true })).toBeVisible();
+  await expect(page.getByText('Announcement previews', { exact: true })).toHaveCount(0);
+  await expect(page.getByText(/Draft previews work in Fixture preview mode only/)).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= (visualViewport?.width ?? innerWidth) + 1)).toBe(true);
+  expect(await page.locator('.gg-events form').evaluate(element => [...element.querySelectorAll('fieldset, fieldset > *, select')].every(child => child.getBoundingClientRect().right <= element.getBoundingClientRect().right))).toBe(true);
+  await page.screenshot({ path: `test-results/gg-events-api-${test.info().project.name}.png`, fullPage: true });
+  await page.clock.fastForward(61000);
+  await expect(page.getByRole('button', { name: 'Refresh from GottaGacha' })).toBeEnabled();
+  await page.clock.fastForward(300000);
+  await expect(page.getByRole('heading', { name: 'Synthetic API gathering' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Current events need a refresh.' })).toBeVisible();
   expect(errors).toEqual([]);
 });
