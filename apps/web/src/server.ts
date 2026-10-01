@@ -1,3 +1,4 @@
+import { registerModuleSecrets } from './module-secrets.js';
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import helmet from '@fastify/helmet';
@@ -48,6 +49,7 @@ export async function createServer(options: ServerOptions) {
   await store.initialize(config.COMMUNITY_NAME, modules);
   const auth = new Auth(db, config, new TokenVault(options.encryptionKey), options.identity, options.demo);
   auth.register(app, options.clientId);
+  registerModuleSecrets(app, auth, store, modules);
   if (options.demo) app.get('/auth/demo', async (_request, reply) => {
     await auth.createSession(reply, { id: config.OWNER_USER_IDS[0]!, username: 'Demo operator' }, { access_token: 'fixture', refresh_token: 'fixture', expires_at: Date.now() + 3600000 });
     return reply.redirect('/');

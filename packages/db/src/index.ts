@@ -1,3 +1,4 @@
+import { ModuleSecrets } from '../../core/src/secret-vault.js';
 import { moduleResources, upgradeSettings } from './module-resources.js';
 import type { StorageDriver, Operations } from './contracts.js';
 import type { ModuleDefinition } from '../../module-sdk/src/server.js';
@@ -12,8 +13,10 @@ export class GuildStore {
   async ready() {
     const status = await this.call('ready', {});
     if (status?.trafficProtocol !== 1) throw new Error('Update the PocketBase storage hooks before starting this version (traffic protocol 1 required).');
+    if (status.secretsProtocol !== 1) throw new Error('Update PocketBase hooks and migrations before starting this version (secrets protocol 1 required).');
   }
   async initialize(displayName: string, modules: ModuleDefinition[]) { await this.ready(); await this.call('initialize', { displayName, modules: modules.map(m => ({ id: m.manifest.id, settings: m.defaultSettings, settingsVersion: m.manifest.settingsVersion })) }); for (const module of modules) await upgradeSettings(this, module); }
+  secrets(module: ModuleDefinition) { return new ModuleSecrets(this, module); }
   resources(moduleId: string) { return moduleResources(this, moduleId); }
   getModule(id: string) { return this.call('moduleGet', { id }); }
   updateModule(id: string, expected: number, actor: string, change: { settings?: unknown; enabled?: boolean }) { return this.call('moduleUpdate', { id, expected, actor, change }); }

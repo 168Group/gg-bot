@@ -7,8 +7,8 @@ export function useSession(): UserSession { const session = useContext(SessionCo
 export class ApiError extends Error { constructor(message: string, public status: number) { super(message); } }
 let csrf = '';
 export function setCsrf(value: string) { csrf = value; }
-export async function api<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
-  const response = await fetch(path, { method, credentials: 'same-origin', headers: { ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(method !== 'GET' ? { 'x-csrf-token': csrf } : {}) }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
+export async function api<T>(path: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(path, { method, signal, credentials: 'same-origin', headers: { ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(method !== 'GET' ? { 'x-csrf-token': csrf } : {}) }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
   const json = await response.json();
   if (!response.ok) throw new ApiError(json.error?.message ?? 'Request failed.', response.status);
   return json.data as T;

@@ -1,6 +1,6 @@
 # PocketHost deployment guide
 
-Last checked: 2026-10-01. Locally tested PocketBase version: **0.40.4**. Storage protocol: **1**, with **trafficProtocol: 1** required by current clients.
+Last checked: 2026-10-01. Locally tested PocketBase version: **0.40.4**. Storage protocol: **1**, with **trafficProtocol: 1** and **secretsProtocol: 1** required by the module-secret client release.
 
 PocketHost documents SFTP access to `pb_hooks` and `pb_migrations` and Secrets exposed in the PocketBase runtime. These capabilities support this adapter on a normal hosted instance without a custom binary. Account-specific deployment has not been performed.
 
@@ -101,3 +101,7 @@ This update changes **only `pb_hooks/operations.js`** on the PocketBase side. It
 5. Deploy the matching bot/dashboard revision. Check readiness, enabled/applied settings, a real edit/delete and role-change log, and the host's remaining quota over a full hour. The catalog can now take five minutes to reflect new channels; settings/delivery can take approximately 30 seconds plus processing.
 
 If the client deploy fails, the previous client can run against the upgraded hooks. Restore old hooks only if rolling all clients back too; current clients require the new operations. Remote rollout and sustained live acceptance remain unverified until operator access is available.
+
+## Additional upgrade for dashboard-managed secrets
+
+The module-secret release adds `pb_migrations/1790851200_module_secrets.js` and changes `pb_hooks/operations.js` again. The hook-only steps above describe the earlier request-budget commit 49650dc, not this later release. Upload the new migration and matching hooks, apply/restart, and verify `ready.secretsProtocol === 1` before deploying secret-capable clients. Existing schema, bindings and data are retained. Configure the same separate `MODULE_SECRET_ENCRYPTION_KEY` on bot/web; never put it in the database or give it to the browser. See [MODULE_SECRETS.md](MODULE_SECRETS.md). Production rollout has not been performed.
