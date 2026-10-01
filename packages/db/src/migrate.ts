@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import type { PostgresDatabase } from './postgres.js';
-export const migrations = ['packages/db/migrations/0001_core.sql', 'modules/logging/db/0001_logging.sql', 'packages/db/migrations/0002_storage_contract.sql', 'packages/db/migrations/0003_module_resources.sql'];
+export const migrations = ['packages/db/migrations/0001_core.sql', 'modules/logging/db/0001_logging.sql', 'packages/db/migrations/0002_storage_contract.sql', 'packages/db/migrations/0003_module_resources.sql', 'packages/db/migrations/0004_module_secrets.sql'];
 export async function migrate(db: PostgresDatabase) {
   await db.transaction(async client => {
     await client.query("SELECT pg_advisory_xact_lock(hashtextextended('omo:migrations', 0))");

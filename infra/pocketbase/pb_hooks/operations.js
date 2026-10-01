@@ -12,7 +12,7 @@ const eventFields = fields({ id: 'e.id', type: 'e.type', subjectId: 'e.subject_i
 const jobFields = fields({ id: 'id', module_id: 'module_id', payload: 'json(payload)', attempts: 'attempts', type: 'type', state: 'state', result: 'json(result)', error: 'error', expires_at: 'expires_at', claim_token: 'claim_token' });
 const deliveryFields = fields({ id: 'id', event_id: 'event_id', destination_id: 'destination_id', marker: 'marker', attempts: 'attempts', created_at: 'created_at', claim_token: 'claim_token' });
 const workerOperations = new Set(['workerPoll', 'deliveryPrepare', 'deliveryVerify', 'workerVerify', 'moduleAcknowledge', 'moduleReject', 'heartbeat', 'eventCapture', 'jobClaim', 'jobFinish', 'deliveryClaim', 'deliveryFinish', 'loggingApply', 'loggingCancel']);
-const readOperations = new Set(['ready', 'moduleGet', 'recordGet', 'recordList', 'catalogGet', 'rolesGet', 'status', 'jobGet', 'eventList', 'eventDetail']);
+const readOperations = new Set(['ready', 'secretGet', 'moduleGet', 'recordGet', 'recordList', 'catalogGet', 'rolesGet', 'status', 'jobGet', 'eventList', 'eventDetail']);
 function settings(input) {
   object(input); integer(input.metadataRetentionDays, 7, 90);
   if (input.destinationId !== null && !/^\d{17,20}$/.test(input.destinationId)) fail(400, 'INVALID_INPUT', 'Invalid destination.');
@@ -43,6 +43,18 @@ function execute(app, guild, operation, input, owner) {
     const recordGet = (module,key) => mapRecord(one(`SELECT ${recordFields} FROM omo_module_record WHERE guild_id={:guild} AND module_id={:module} AND key={:key} AND (expires_at IS NULL OR expires_at>{:now})`, {module,key}));
     const moduleIds = value => { if (!Array.isArray(value) || value.length > 100 || value.some(id => typeof id !== 'string' || !/^[a-z][a-z0-9-]{0,31}$/.test(id))) fail(400, 'INVALID_INPUT', 'Invalid module IDs.'); return [...new Set(value)]; };
     const actions = {
+      secretGet() {
+        getModule(text(input.moduleId, 32));
+        const name = text(input.name, 64); if (!/^[A-Z][A-Z0-9_]{0,63}$/.test(name)) fail(400, 'INVALID_INPUT', 'Invalid secret name.');
+        return one(`SELECT json_object('mode',mode,'ciphertext',ciphertext,'revision',revision) AS doc FROM omo_module_secret WHERE guild_id={:guild} AND module_id={:module} AND name={:name}`, { module: input.moduleId, name });
+      },
+      secretSet() {
+        const previous = actions.secretGet(), expected = integer(input.expected, 0, 2147483646);
+        if ((previous ? previous.revision : 0) !== expected) fail(409, 'REVISION_CONFLICT', 'Secret changed. Refresh its status.');
+        if (!['stored','disabled','environment'].includes(input.mode) || (input.mode === 'stored' ? typeof input.ciphertext !== 'string' || !/^[A-Za-z0-9_-]{32,40000}$/.test(input.ciphertext) : input.ciphertext !== null)) fail(400, 'INVALID_INPUT', 'Invalid encrypted secret.');
+        write(`INSERT INTO omo_module_secret(guild_id,module_id,name,mode,ciphertext,revision) VALUES({:guild},{:module},{:name},{:mode},{:ciphertext},{:revision}) ON CONFLICT(guild_id,module_id,name) DO UPDATE SET mode={:mode},ciphertext={:ciphertext},revision={:revision}`, { module: input.moduleId, name: input.name, mode: input.mode, ciphertext: input.ciphertext, revision: expected + 1 });
+        return actions.secretGet();
+      },
       workerPoll() {
         const ids = moduleIds(input.moduleIds), jobs = moduleIds(input.jobModuleIds);
         const modules = ids.map(getModule);
@@ -93,7 +105,7 @@ function execute(app, guild, operation, input, owner) {
         write(`INSERT INTO omo_settings_audit(id,guild_id,actor_id,module_id,before_value,after_value,created_at) VALUES({:key},{:guild},'system:migration',{:id},{:before},{:after},{:now})`,{key:uuid(),id,before:JSON.stringify(before.settings),after:settings}); return getModule(id);
       },
       workerVerify() { return null; },
-      ready() { const row = one(`SELECT json_object('version',version) AS doc FROM omo_schema`); if (!row || row.version !== 1) throw new Error('Schema mismatch'); return { protocol: 1, trafficProtocol: 1 }; },
+      ready() { const row = one(`SELECT json_object('version',version) AS doc FROM omo_schema`); if (!row || row.version !== 1) throw new Error('Schema mismatch'); rows(`SELECT json_object('revision',revision) AS doc FROM omo_module_secret LIMIT 0`); return { protocol: 1, trafficProtocol: 1, secretsProtocol: 1 }; },
       initialize() {
         text(input.displayName, 60); if (!Array.isArray(input.modules) || input.modules.length > 100) fail(400, 'INVALID_INPUT', 'Invalid modules.');
         write('INSERT INTO omo_guild(guild_id,display_name) VALUES({:guild},{:name}) ON CONFLICT DO NOTHING', { name: input.displayName });

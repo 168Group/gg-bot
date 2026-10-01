@@ -14,6 +14,16 @@ Discord channel logs now use readable summaries for creation/deletion and change
 
 The guided setup launcher provisions local PocketBase, uploads a first-install PocketBase hook bundle over SFTP, or migrates an existing PostgreSQL database. Activation verifies Discord credentials, synchronizes commands and supervises separate bot/web services. Real Discord and hosted PocketHost deployment acceptance remain outstanding.
 
+## Declared module secrets (2026-10-01)
+
+Request GG-EVENTS-20261001-03 is implemented on `codex/module-secret-vault`, based on request-budget commit 49650dc, now merged in base main as 7a1f05b. Generic owner controls appear on module cards for manifest-declared names; no community-specific API behavior was added. Async `context.secrets.get(name)` reads each work unit's current stored override or explicit environment fallback. Legacy `context.secret(name)` stays environment-only, so downstream callers must migrate to use the controls.
+
+Values use AES-256-GCM with guild/module/name associated data. The dedicated MODULE_SECRET_ENCRYPTION_KEY must match on bot/web; managed setup persists it in the encrypted profile before launching children. Database rows contain ciphertext, source mode and monotonic revisions. Deleting writes a disabled tombstone and blocks fallback; Use environment explicitly restores it. Corrupt ciphertext and missing/wrong keys never fall back. Metadata cannot tell whether the bot environment contains a value and reports configured:null for that source.
+
+Owner-only secret APIs use fresh membership and CSRF for writes/reveal, revision checks and no-store responses. Plaintext never enters query/mutation caches or browser persistence. Controls clear it on hide, navigation, page hiding and a 30-second reveal timer, ignoring late reveal responses. Typecheck, lint, 68 unit tests, 80 integration tests, production/fixture builds, 16 desktop/mobile browser tests and bundle generation pass. Both providers have encrypted-at-rest, CAS, rotation, fallback, isolation and access regression tests. See docs/MODULE_SECRETS.md for the complete contract.
+
+**Rollout differs from request 02:** this adds PostgreSQL migration 0004 and PocketBase migration 1790851200 plus updated operations.js. Readiness requires secretsProtocol:1 in addition to trafficProtocol:1. No production deployment is authorized by this request. Keep the downstream Railway merge gated on the full matching storage upgrade and shared key configuration.
+
 ## PocketHost request-budget release (2026-10-01)
 
 Implemented on branch `codex/pockethost-request-budget`. Local validation passes: typecheck, lint, 68 unit tests, 70 integration tests, production/fixture builds, 12 browser tests and bundle generation. **Deploy updated PocketBase hooks before new clients.** Only `pb_hooks/operations.js` changes; no schema migration or key rotation. `ready` now advertises `trafficProtocol: 1`; current clients explicitly require it. Old clients continue to work against new hooks. See docs/POCKETHOST.md for the hooks-first rollout and previous hook checksum.
@@ -24,7 +34,7 @@ The dashboard now uses a shared authenticated /api/workspace query refreshed eve
 
 Measured HTTP workloads (simulated time/server responses with production adapter/cycle/delivery/Fastify/Auth): 325 requests/hour for one idle module, 328 for two, and 912 for two plus 100 changes and one open overview. Counts include startup/shutdown and lease renewals. Active-workload peak is 27 requests/10 seconds. Both real providers separately verify storage semantics. This replaces the earlier 960/1080 idle estimate; it is not proof of unlimited throughput or live PocketHost performance. Bursts, retries, extra viewers and third-party module work still consume quota.
 
-Live hook upload is pending: Comet reported the Mac locked. Do not merge/deploy the downstream client PR until the hosted ready response advertises trafficProtocol 1. No credentials were read or changed.
+The original hook upload was blocked by the locked Mac. A later GitHub check confirms base PR5 merged as 7a1f05b and downstream PR7 as 4971c27 on 2026-10-01; those merges happened outside the secret-feature work. This session has not independently verified live storage capability. No production credentials or deployment settings were changed by the secret-feature implementation.
 
 ## Verified state
 

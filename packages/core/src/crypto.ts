@@ -8,14 +8,16 @@ export class TokenVault {
     this.key = Buffer.from(key, 'hex');
   }
   csrf(sessionId: string): string { return createHmac('sha256', this.key).update(`csrf:${sessionId}`).digest('base64url'); }
-  encrypt(value: unknown): string {
+  encrypt(value: unknown, context?: string): string {
     const iv = randomBytes(12); const cipher = createCipheriv('aes-256-gcm', this.key, iv);
+    if (context !== undefined) cipher.setAAD(Buffer.from(context));
     const body = Buffer.concat([cipher.update(JSON.stringify(value)), cipher.final()]);
     return Buffer.concat([iv, cipher.getAuthTag(), body]).toString('base64url');
   }
-  decrypt<T>(value: string): T {
+  decrypt<T>(value: string, context?: string): T {
     const data = Buffer.from(value, 'base64url');
     const decipher = createDecipheriv('aes-256-gcm', this.key, data.subarray(0, 12));
+    if (context !== undefined) decipher.setAAD(Buffer.from(context));
     decipher.setAuthTag(data.subarray(12, 28));
     return JSON.parse(Buffer.concat([decipher.update(data.subarray(28)), decipher.final()]).toString()) as T;
   }

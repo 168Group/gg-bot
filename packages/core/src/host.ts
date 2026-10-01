@@ -64,6 +64,11 @@ export class ModuleHost {
                   if (this.messages.has(id)) throw new Error('Register one message handler per module.');
                   this.messages.set(id, { subscription, run });
                 },
+                secrets: { get: async name => {
+                  if (!module.manifest.requiredSecrets?.includes(name)) throw new Error('Secret is not declared by this module.');
+                  if (!this.store.secrets) throw new Error('Module secret storage is unavailable.');
+                  return this.store.secrets(module).get(name);
+                } },
                 secret: name => {
                   if (!module.manifest.requiredSecrets?.includes(name)) throw new Error('Secret is not declared by this module.');
                   const value = process.env[moduleSecretKey(id,name)];
