@@ -69,3 +69,11 @@ Ten new real-provider cases test ciphertext at rest; authenticated guild/module/
 Desktop/mobile tests cover masked defaults with zero automatic reveal requests, cleared password inputs after saving, explicit Show/Hide, 30-second expiry, navigation clearing, ignored late responses after Hide/close, deletion/fallback controls and absence from browser persistence. Reviewed screenshot: `test-results/module-secret-mobile.png`; desktop equivalent is available locally. Tests use synthetic credentials only. No community API behavior or production deployment was included.
 
 PocketBase requires the new module-secret migration and matching hooks; PostgreSQL requires migration 0004. Clients check secretsProtocol:1. Bot/web must receive the same dedicated MODULE_SECRET_ENCRYPTION_KEY. Changing that encryption key does not rewrap old ciphertext. The base budget's simulated idle/workload counts remain unchanged; interactive secret management and async reads add explicitly requested storage calls.
+
+## Dashboard static-asset rate limits
+
+Request GG-EVENTS-20261001-04: baseline typecheck, lint and 68 unit tests passed. The new real-server regression failed before the fix with HTTP 429 during an asset GET/HEAD burst. Afterward, typecheck, lint, production/fixture builds, 68 unit tests, 81 integration tests and all 18 desktop/mobile browser cases pass together.
+
+The integration regression serves an actual temporary static file through Fastify, requests it 150 times by GET and 150 by HEAD, then verifies the full page 120, API read 360, API write 60 and auth 20 per-minute allowances. Each next request returns 429 with Retry-After and no-store. Asset-looking query parameters do not bypass protected routes; assets still load after the application buckets are exhausted. Missing assets return 404 and unsupported methods do not return file content.
+
+Each browser project requests a built JavaScript asset 150 times, signs in and opens the dynamically loaded logging page without 429 or page errors. The full combined suite passes; the mobile screenshot test-results/asset-burst-mobile.png was visually reviewed. These are local synthetic checks, not a production rollout. Only matched GET/HEAD routes in the reserved /assets/ namespace are exempt; storage traffic and configuration are unchanged.
