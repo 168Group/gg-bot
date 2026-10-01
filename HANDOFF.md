@@ -1,6 +1,16 @@
 # Implementation handoff
 
-Updated 2026-09-30. OMOBot is a modular, self-hostable Discord bot by OMOWorlds, released under Apache 2.0. One deployment serves one configured guild. README is the public entry point; ROADMAP records unfinished work.
+Updated 2026-09-30. This repository is **gg-bot**, GottaGacha’s downstream Discord bot powered by the reusable OMOBot framework from OMOWorlds. The mascot is **Juunni**, and the current deployment display name is **Juunnii**. The inherited framework is Apache 2.0 licensed. One deployment serves one configured guild. README is the public entry point; ROADMAP records unfinished work.
+
+## GottaGacha events foundation
+
+`modules/gottagacha-events` is the downstream-only module created with the existing scaffolder. It is installed but defaults to disabled/disconnected. Explicit fixture mode provides `/events upcoming`, a protected dashboard, revision-checked refresh jobs, persisted announcement previews and admin-only staff-channel draft parsing/review. Samples are clearly labeled, use fixed 2030 dates, and never call the GottaGacha API or send announcements. Preview dedupe is retained for seven days, not an exactly-once delivery guarantee. Drafts retain bounded parsed fields and validation issues for 24 hours; ordinary messages and unrecognized raw text are not stored. `/events draft` and dashboard review cannot publish.
+
+See [the module contract checklist](modules/gottagacha-events/README.md). Authentication and endpoints remain unknown; the module declares no guessed secret requirements. Confirm the contract before declaring real SDK secrets and configure them privately on the bot service. Live announcements need the requested reusable upstream delivery/reconciliation capability. Member interactions need verified identity/authorization, and creation needs revision-bound explicit confirmation plus write idempotency/reconciliation. The detailed plan is retained under ignored `docs/plans/PLAN_gottagacha-events.md`; task routing and request tracking remain in ignored local coordination context.
+
+## Deployment observation
+
+Read-only inspection on 2026-09-30 showed Railway dashboard **Online** and bot **Crashed** on logging PR #4 (`9fc28d34193a71b11dc76de54094cd5ce2142f5a`). The bot exhausted startup retries with `503 STORAGE_PROTOCOL: PocketBase returned an invalid storage response` during initialization; last visible error was 17:33 EDT. The dashboard settings page loaded and confirmed Juunnii. This is evidence of a failed worker, not successful live logging acceptance. Bot and dashboard run on Railway; storage is PocketBase on PocketHost. The separate base task is investigating recovery in its own downstream worktree. Its subsequent diagnosis identifies rate limiting as the leading explanation, not a confirmed historical 429. No production changes were made by this events foundation. Recheck health after the incident recovery release.
 
 ## Current implementation
 
@@ -15,6 +25,8 @@ Discord channel logs now use readable summaries for creation/deletion and change
 The guided setup launcher provisions local PocketBase, uploads a first-install PocketBase hook bundle over SFTP, or migrates an existing PostgreSQL database. Activation verifies Discord credentials, synchronizes commands and supervises separate bot/web services. Real Discord and hosted PocketHost deployment acceptance remain outstanding.
 
 ## Verified state
+
+The gg-bot events foundation baseline passed typecheck, lint, 52 unit tests, 61 integration tests and the production build before source changes. The completed fixture foundation passes typecheck, lint, 58 unit tests, 65 real-provider integration tests, production/fixture builds and 12 desktop/mobile browser tests. Desktop/mobile screenshots were reviewed. The browser suite first exposed a test loading race, which was fixed; an immediate rerun also reproduced the known demo lease cleanup issue before the successful full run. A parser regression test verifies minute-precision ISO inputs are normalized with seconds while offset/timezone mismatches remain rejected. No GottaGacha API, live Discord send or production deployment was performed by this feature work.
 
 The foundation passed typecheck, lint, builds, 18 unit tests, 53 real database/integration tests and eight desktop/mobile browser tests locally and in GitHub Actions before public-release preparation. See docs/VERIFICATION.md. No production credentials were used.
 
@@ -45,4 +57,4 @@ The 2026-09-30 upstream logging merge preserves this fork’s Railway configurat
 
 ## Next work
 
-Finish the live Discord/PocketHost acceptance check, expand logging and audit correlation, and harden deployment recovery. Build community-specific integrations only against confirmed API contracts, keeping private settings and credentials outside the repository.
+Confirm incident recovery and finish live Discord/PocketHost acceptance. Obtain the documented GottaGacha API contract, then implement validated read-only browsing and integrate reviewed upstream announcement support before member actions and confirmed publishing. Shared logging/audit and recovery capabilities remain upstream work. Keep community-specific integrations downstream and private settings/credentials outside the repository.

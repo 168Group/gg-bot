@@ -12,6 +12,8 @@ Updated 2026-09-30. Unchecked requirements are unfinished work. The verified fir
 
 ## Development tooling follow-up
 
+- The events foundation browser rerun on 2026-09-30 again hit the documented lease-expiry startup failure. Process inspection identified the failed run’s orphaned local PocketBase child; it was stopped before retrying, without bypassing worker ownership.
+
 - The demo restart/lease issue below was reproduced again during the 2026-09-29 channel-formatting preview rerun. A successful full browser suite followed by an immediate second run failed before tests with the same worker-lock error and left a PocketBase test child on port 8092. This remains separate from the logging renderer fix.
 - [ ] Harden demo shutdown/restart after a terminal process-group interruption. During the theme review, two restarts of `.local/demo-pocketbase` failed at `scripts/demo.ts:21` with `Another bot worker already holds this guild lock.` after the previous demo was stopped. Process inspection found no remaining demo/PocketBase process. An isolated `.local/theme-preview` database started normally. The module verification also reproduced a startup failure leaving an orphaned PocketBase child on port 8092; stopping that confirmed test child and allowing lease expiry restored startup. Reproduce signal ordering, failed-start cleanup and lease expiry before changing the ownership logic; do not bypass the worker lock.
 
@@ -35,9 +37,19 @@ Updated 2026-09-30. Unchecked requirements are unfinished work. The verified fir
 - [ ] Configure protected off-host backups and monitoring; prove restoration into a fresh instance without blindly replaying already delivered work. Current restart tests prove persistence, not backup restoration.
 - [x] Verify the foundation in hosted CI: typecheck, lint, builds, 18 unit, 53 integration and eight browser tests.
 
-## Community modules
+## GottaGacha events (downstream)
 
-- [ ] Add a documented event API integration example once an API contract is confirmed. Support browsing and updates first, then staff drafts with explicit confirmation before publishing. Server-specific production integrations belong in their own downstream repositories.
+- [x] Establish gg-bot identity, upstream boundaries, scaffolded module and fixture-only foundation. Scoped refresh jobs, preview dedupe, upcoming browsing and safe staff drafts use existing SDK capabilities. See modules/gottagacha-events/README.md.
+- [ ] Obtain the authoritative API contract: endpoints/environments, auth/scopes, event schema, pagination/rate limits, changes/cancellations, timezone, member identity/authorization and write/idempotency/reconciliation rules. No live endpoint or credential scheme has been invented.
+- [ ] Implement the confirmed read adapter with response validation, bounded pages/bytes, request deadlines and bounded read retries. Distinguish stale, partial and empty results; keep fixture/live data separate.
+- [ ] Integrate reviewed, merged upstream scoped announcement delivery/reconciliation. Current SDK cannot send arbitrary module announcements; a substantive request is outstanding with the base task and tracked locally. Current previews never send and their seven-day dedupe is not a production delivery ledger.
+- [ ] Add member actions only after API identity linkage, consent/revocation and permissions are verified.
+- [ ] Expand labeled text drafts into the agreed plain-language parser after field semantics are known. Require exact revision review, expiring explicit confirmation, fresh staff authorization and idempotent create reconciliation before any write. Current drafts are review-only and expire after 24 hours.
+- [ ] Perform separately authorized live API/Discord acceptance and deployment after all contract and delivery gates pass.
+
+## Current deployment incident
+
+- [ ] Recheck bot health after separate incident recovery. On 2026-09-30 the dashboard was Online and usable, but the PR #4 bot deployment was Crashed after repeated `STORAGE_PROTOCOL` initialization failures (last observed error 17:33 EDT). The base task is investigating PocketHost quota/cooldown handling in an isolated downstream worktree; rate limiting is a leading explanation, not proof of an old 429. Preserve its recovery work and later merge the reviewed downstream main update. This module task does not authorize production deployment.
 
 ## Explicitly deferred
 

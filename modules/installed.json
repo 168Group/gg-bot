@@ -1,4 +1,14 @@
 [
-  { "id": "logging", "developmentOnly": false },
-  { "id": "example", "developmentOnly": true }
+  {
+    "id": "logging",
+    "developmentOnly": false
+  },
+  {
+    "id": "example",
+    "developmentOnly": true
+  },
+  {
+    "id": "gottagacha-events",
+    "developmentOnly": false
+  }
 ]

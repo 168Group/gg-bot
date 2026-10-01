@@ -42,6 +42,16 @@ Local screenshots `test-results/activity-message.edited-desktop.png`, `test-resu
 
 The deployment fork was checked before merging upstream (typecheck, lint and 18 unit tests passed), then again after resolving the runtime/build conflicts. The combined version passed typecheck, lint, 52 unit tests, 61 real provider/integration tests, production/fixture builds and ten desktop/mobile browser tests. Railway startup retry and command synchronization remain included. The first PostgreSQL attempt failed with a missing `libicudata.68.dylib` link in the fresh dependency installation. Running the pinned package’s approved postinstall restored its symlinks and the full integration suite passed. No application patch was needed for that environment failure.
 
+### GottaGacha events foundation
+
+Before source changes, the clean downstream checkout at logging PR #4 passed typecheck, lint, 52 unit tests, 61 integration tests and the production build. The initial shell lacked the pinned toolchain/dependencies, and sandboxed local listeners could not run the integration suite; after using Node 24.21.0, pnpm 10.34.5 and the checksum-verified PocketBase 0.40.4 binary with local listener permission, the baseline passed.
+
+The foundation passes typecheck, lint, 58 unit tests, 65 actual PostgreSQL/PocketBase integration tests, production/fixture builds and all 12 desktop/mobile browser tests. New coverage includes fixture filtering/cancellation, replay and concurrent dedupe, partial persistence recovery, malformed-page rejection, bounded draft parsing and TTL, guild/channel/staff authorization, revoked capabilities on disable, stale settings jobs, CSRF, viewer restrictions and no outbound fetch. Minute-precision ISO input initially failed a regression test and now normalizes seconds before timezone validation.
+
+The first events browser cases failed because the test queried Enable before the module card loaded. Waiting for the card corrected the test. An immediate rerun reproduced the already documented lease-expiry failure and left a confirmed local PocketBase test child; stopping that child and allowing expiry restored the full suite without changing ownership protections. The second-refresh assertion was then tightened to wait for the new job rather than cached completion text; both targeted desktop/mobile cases passed again.
+
+Screenshots `test-results/gg-events-desktop.png` and `test-results/gg-events-mobile.png` were visually reviewed. The page labels samples, distinguishes preview readiness from API connection, shows never-sent announcements, explains draft expiry and blocks publishing. No horizontal overflow was observed. Tests use synthetic identity and local storage, not live API/Discord acceptance. No new storage migration or hook upload is needed.
+
 ### Commands
 
 Install the pinned toolchain and frozen dependencies. Run `pnpm pocketbase:install`, `pnpm exec playwright install chromium`, `pnpm check`, `pnpm pocketbase:bundle`, then `pnpm test:e2e`. Local listeners and child processes must be permitted. Do not rebuild frontend assets while tests are using them.

@@ -4,4 +4,6 @@ import { definition as m0 } from '../modules/logging/definition.js';
 if (m0.manifest.id !== 'logging') throw new Error('Module ID must match its installed package: logging');
 import { definition as m1 } from '../modules/example/definition.js';
 if (m1.manifest.id !== 'example') throw new Error('Module ID must match its installed package: example');
-export const installedDefinitions = (production: boolean): ModuleDefinition[] => { void production; return [m0, ...(!production ? [m1] : [])]; };
+import { definition as m2 } from '../modules/gottagacha-events/definition.js';
+if (m2.manifest.id !== 'gottagacha-events') throw new Error('Module ID must match its installed package: gottagacha-events');
+export const installedDefinitions = (production: boolean): ModuleDefinition[] => { void production; return [m0, ...(!production ? [m1] : []), m2]; };

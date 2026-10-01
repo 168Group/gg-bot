@@ -1,6 +1,8 @@
 # Deploy on Railway
 
-One Railway project runs three services built from this repository: **pocketbase** (storage, with a persistent volume), **web** (the public dashboard) and **bot** (the private Discord worker). The web and bot services build the same image from `infra/Dockerfile` and differ only in start command and variables. PocketBase builds from `infra/Dockerfile.pocketbase`, which bakes the committed hook and migration bundle into the image, so nothing is uploaded over SFTP.
+GottaGacha uses separate Railway **bot** and **dashboard** services with PocketBase on **PocketHost**. Follow the PocketHost section below for this deployment. Check current health before assuming either service is running.
+
+For the alternative all-Railway setup, one project runs three services built from this repository: **pocketbase** (storage, with a persistent volume), **web** (the public dashboard) and **bot** (the private Discord worker). The web and bot services build the same image from `infra/Dockerfile` and differ only in start command and variables. PocketBase builds from `infra/Dockerfile.pocketbase`, which bakes the committed hook and migration bundle into the image, so nothing is uploaded over SFTP.
 
 The bot must run as exactly one replica: it holds a renewable per-guild lease in PocketBase and a second worker exits on startup.
 
@@ -14,7 +16,7 @@ Do this first: two of the variables below come from it.
 2. **General Information**: copy **Application ID**. This is `DISCORD_APPLICATION_ID`.
 3. **OAuth2**: select **Reset Secret** and copy the client secret. This is `DISCORD_CLIENT_SECRET`. Leave the **Redirects** list for now; you add the URL after Railway gives the web service a domain.
 4. **Bot**: select **Reset Token** and copy it. This is `DISCORD_BOT_TOKEN`. It is shown once.
-5. **Bot** → **Privileged Gateway Intents**: none are required for the bundled logging module, which only needs the `Guilds` intent. Enable **Message Content Intent** only if a module you install declares `GuildMessages` and `MessageContent`.
+5. **Bot** → **Privileged Gateway Intents**: enable **Server Members Intent** and **Message Content Intent** for the current installed logging module, even when its activity switches are off. Installed definitions determine requested intents. These were enabled on the confirmed GottaGacha application; verify before any application change. See [LOGGING.md](LOGGING.md).
 6. **Bot** → uncheck **Public Bot** unless you want other servers to be able to invite it. Each deployment serves one guild anyway.
 7. **Installation**: set **Install Link** to **None**. You will use the invite URL below instead.
 
