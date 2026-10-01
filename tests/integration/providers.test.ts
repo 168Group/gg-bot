@@ -14,9 +14,12 @@ import { migrate } from '../../packages/db/src/migrate.js';
 import type { StorageDriver } from '../../packages/db/src/contracts.js';
 import { loggingDefinition } from '../../modules/logging/manifest.js';
 import { LoggingRepository } from '../../modules/logging/bot/repository.js';
-import { defaultLoggingSettings, eventTypes, eventLabels } from '../../modules/logging/shared/settings.js';
+import { defaultLoggingSettings, eventTypes, eventLabels, type LoggingSettings } from '../../modules/logging/shared/settings.js';
 import { previewEvent } from '../../modules/logging/bot/preview.js';
 import { DeliveryWorker } from '../../modules/logging/bot/delivery.js';
+import { botRegistry } from '../../registry/bot.js';
+import { ActivityCollector } from '../../modules/logging/bot/collect.js';
+import type { GatewayDispatchPayload } from 'discord.js';
 import { createServer } from '../../apps/web/src/server.js';
 import { readConfig } from '../../packages/core/src/config.js';
 import type { Observation } from '../../packages/module-sdk/src/server.js';
@@ -39,6 +42,44 @@ describe.each(['postgres', 'pocketbase'] as const)('%s storage contract', provid
   const store = () => driver.scope(guild);
   const repository = () => new LoggingRepository(store());
   async function activate() { const state = await store().updateModule('logging', 1, owner, { enabled: true, settings }); await store().acknowledge('logging', state); }
+  it('collects immediate deletions and new-member role updates through the installed production module', async () => {
+    const sharedStore = store(), repo = new LoggingRepository(sharedStore);
+    const host = new ModuleHost(guild, botRegistry(repo, async () => {}, true), sharedStore, { info() {}, error() {} });
+    const pending: Promise<void>[] = [];
+    const collector = new ActivityCollector({ guildId: guild, botId: () => destination,
+      settings: () => host.activeSettings('logging') as LoggingSettings | null,
+      channel: () => ({ parentId: null, containerId: null }),
+      member: () => ({ nickname: null, roles: [guild], label: 'New member' }), voiceChannel: () => null,
+      emit: observation => { pending.push(host.dispatch(observation)); }, missingMemberBaseline() { throw new Error('Expected a joined member baseline'); }
+    });
+    const dispatch = (t: string, data: Record<string, unknown>) => collector.handle({ op: 0, t, s: 1, d: { guild_id: guild, ...data } } as GatewayDispatchPayload, t);
+    try {
+      await sharedStore.updateModule('logging', 1, owner, { enabled: true, settings });
+      await host.sync();
+      expect((await sharedStore.getModule('logging')).appliedEnabled).toBe(true);
+      const channel = '100000000000000031', message = '100000000000000099', member = '100000000000000041';
+      dispatch('MESSAGE_CREATE', { id: message, channel_id: channel, author: { id: member, username: 'Member' }, content: 'Deleted immediately', attachments: [] });
+      dispatch('MESSAGE_DELETE', { id: message, channel_id: channel });
+      dispatch('GUILD_MEMBER_UPDATE', { user: { id: member, username: 'Member' }, nick: null, roles: ['100000000000000051'] });
+      dispatch('VOICE_STATE_UPDATE', { user_id: member, channel_id: channel });
+      await Promise.all(pending);
+      const events = (await repo.list({ limit: 10 })).events;
+      expect(events.map(e => e.type).sort()).toEqual(['member.roles.updated', 'message.deleted', 'voice.joined']);
+      expect(events.find(e => e.type === 'message.deleted')?.before?.content).toBe('Deleted immediately');
+      const titles: string[] = [];
+      await new DeliveryWorker(repo, { async validate() {}, async find() { return null; }, async send(_id, payload) { titles.push(payload.embeds[0]!.title); return destination; } }).drain();
+      expect(titles).toHaveLength(3);
+      expect((await repo.list({ limit: 10 })).events.every(e => e.deliveryState === 'sent')).toBe(true);
+      dispatch('MESSAGE_CREATE', { id: '100000000000000098', channel_id: channel, author: { id: member, username: 'Member' }, content: 'Clear on disable', attachments: [] });
+      expect(collector.cachedMessages).toBe(1);
+      await sharedStore.updateModule('logging', 2, owner, { enabled: false });
+      await host.sync();
+      dispatch('MESSAGE_DELETE', { id: '100000000000000098', channel_id: channel });
+      await Promise.all(pending);
+      expect(collector.cachedMessages).toBe(0);
+      expect((await repo.list({ limit: 10 })).events).toHaveLength(3);
+    } finally { await host.stop(); collector.clear(); }
+  });
   async function mutateForTest(pgSql: string, sqliteSql: string) {
     if (provider === 'postgres') await (driver as Database).query(pgSql);
     else { const sqlite = new DatabaseSync(`${pb!.directory}/pb_data/data.db`); try { sqlite.exec(sqliteSql); } finally { sqlite.close(); } }
