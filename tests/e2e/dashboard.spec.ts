@@ -1,5 +1,21 @@
 import { test, expect } from '@playwright/test';
 import { eventTypes, eventLabels } from '../../modules/logging/shared/settings.js';
+test('asset bursts do not block a fresh module navigation', async ({ page, request }) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('response', response => { if (response.status() === 429) errors.push(`Rate limited: ${new URL(response.url()).pathname}`); });
+  await page.goto('/');
+  const asset = await page.locator('script[src^="/assets/"]').first().getAttribute('src');
+  expect(asset).toBeTruthy();
+  for (let index = 0; index < 150; index++) {
+    expect((await request.get(`${asset}?burst=${index}`)).status()).toBe(200);
+  }
+  await page.goto('/auth/demo');
+  await page.getByRole('link', { name: 'Configure logging' }).click();
+  await expect(page.getByLabel('Log destination')).toBeVisible();
+  expect(errors).toEqual([]);
+  await page.screenshot({ path: `test-results/asset-burst-${test.info().project.name}.png`, fullPage: true });
+});
 test('staff can inspect fixtures, save routing, preview and run a delivery test', async ({ page }) => {
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   await page.goto('/auth/demo');

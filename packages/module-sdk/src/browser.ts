@@ -23,3 +23,5 @@ export interface WebModule {
   id: string; navigation: { label: string; path: string; order: number };
   load: () => Promise<{ default: import('react').ComponentType }>;
 }
+
+export interface SecretMetadata { name: string; source: 'stored' | 'disabled' | 'environment'; configured: boolean | null; revision: number; canReveal: boolean }

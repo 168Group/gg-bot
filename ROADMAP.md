@@ -15,8 +15,15 @@ Updated 2026-10-01. Unchecked requirements are unfinished work. The verified fir
 - The demo restart/lease issue below was reproduced again during the 2026-09-29 channel-formatting preview rerun. A successful full browser suite followed by an immediate second run failed before tests with the same worker-lock error and left a PocketBase test child on port 8092. This remains separate from the logging renderer fix.
 - [ ] Harden demo shutdown/restart after a terminal process-group interruption. During the theme review, two restarts of `.local/demo-pocketbase` failed at `scripts/demo.ts:21` with `Another bot worker already holds this guild lock.` after the previous demo was stopped. Process inspection found no remaining demo/PocketBase process. An isolated `.local/theme-preview` database started normally. The module verification also reproduced a startup failure leaving an orphaned PocketBase child on port 8092; stopping that confirmed test child and allowing lease expiry restored startup. Reproduce signal ordering, failed-start cleanup and lease expiry before changing the ownership logic; do not bypass the worker lock.
 
+## Module credentials
+
+- [x] Implement generic declared-module encrypted storage, owner editor/reveal controls and async next-job lookup on both providers. See docs/MODULE_SECRETS.md.
+- [ ] Complete the separately authorized downstream rollout after schema/hook upgrades and matching bot/web encryption keys. Current request explicitly excludes production deployment.
+- [ ] Add encryption-key rewrap/rotation tooling with verified recovery. Replacing an API credential is supported now; changing the server encryption key does not migrate existing ciphertext.
+
 ## Next implementation slices
 
+- [x] Add bounded persistent message snapshots for restart recovery and readable channel name/ID fallbacks for message logs. Both database providers, batched request budgets and local browser previews are verified; live Gateway/Discord acceptance remains outstanding.
 - [x] Fix activity collector settings across installed module factories. Real provider regressions reproduced applied logging with zero captured deletion/role/voice events because runtime and module had separate repositories. Collection now reads the running host's accepted settings; production-registry capture, delivery and disable tests pass on both databases. Live Discord verification remains outstanding.
 - [x] Replace raw channel snapshot dumps in Discord with compact create/delete summaries and changed-field updates. Permission overwrites use counts or readable state transitions; detailed evidence remains in the dashboard. Regression fixtures reproduce large overwrite arrays seen in production screenshots. Local verification is recorded in docs/VERIFICATION.md; live Discord rendering still needs checking after downstream deployment.
 - [x] Add message edits/deletions (including bulk deletion), member nicknames, member role assignments/removals and voice joins/leaves. Ordinary new messages create no log records. Bounded-cache, missing-baseline, exclusion and dashboard coverage is verified locally; live Discord acceptance remains below.

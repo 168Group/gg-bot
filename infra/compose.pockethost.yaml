@@ -7,6 +7,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
+      MODULE_SECRET_ENCRYPTION_KEY: ${MODULE_SECRET_ENCRYPTION_KEY:-}
       STORAGE_PROVIDER: pocketbase
       POCKETBASE_URL: ${POCKETBASE_URL:?Set POCKETBASE_URL}
       POCKETBASE_SERVICE_KEY: ${POCKETBASE_SERVICE_KEY:?Set POCKETBASE_SERVICE_KEY}
@@ -28,6 +29,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
+      MODULE_SECRET_ENCRYPTION_KEY: ${MODULE_SECRET_ENCRYPTION_KEY:-}
       WEB_HOST: 0.0.0.0
       STORAGE_PROVIDER: pocketbase
       POCKETBASE_URL: ${POCKETBASE_URL:?Set POCKETBASE_URL}

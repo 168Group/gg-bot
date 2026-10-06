@@ -25,6 +25,11 @@ export class ManagedRuntime {
       if (profile.kind === 'local') await this.provisioner.localFor(profile);
       const webPort = await freePort(), botPort = await freePort();
       profile.env.SESSION_ENCRYPTION_KEY ??= randomBytes(32).toString('hex');
+      profile.env.MODULE_SECRET_ENCRYPTION_KEY ??= randomBytes(32).toString('hex');
+      // Persist even on retries: an earlier write may have failed after generating an in-memory key.
+      const state = await this.provisioner.store.read(), saved = state.profiles.find(p => p.id === profile.id);
+      if (!saved) throw new SetupError('Save this installation profile before activation.');
+      saved.env = { ...profile.env }; await this.provisioner.store.save(state);
       const common: NodeJS.ProcessEnv = { PATH: process.env.PATH, NODE_ENV: this.origin.startsWith('https:') ? 'production' : 'development', ...profile.env, DISCORD_GUILD_ID: profile.guildId, COMMUNITY_NAME: profile.name, BOT_NAME: profile.discord.botName, OWNER_USER_IDS: profile.discord.ownerId, DASHBOARD_ORIGIN: this.origin, WEB_PORT: String(webPort), BOT_HEALTH_PORT: String(botPort) };
       const launch = (app: 'bot' | 'web', env: NodeJS.ProcessEnv) => {
         const child = spawn(process.execPath, [this.entries[app]], { env, stdio: ['ignore', 'pipe', 'pipe'] });
