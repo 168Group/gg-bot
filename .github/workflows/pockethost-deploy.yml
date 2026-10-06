@@ -31,21 +31,43 @@ jobs:
           echo "Public key derived from the secret (must match the key registered in PocketHost):"
           ssh-keygen -y -f ~/.ssh/pockethost || { echo "The secret is not a valid private key. Paste it again from the original source."; exit 1; }
           ssh-keyscan -p 2222 ftp.pockethost.io >> ~/.ssh/known_hosts 2>/dev/null
-      - name: Upload hooks and migrations
+      - name: Install and verify migrations before hooks
         env:
           PH_USER: ${{ secrets.POCKETHOST_EMAIL }}
           PH_INSTANCE: ${{ secrets.POCKETHOST_INSTANCE }}
         run: |
           test -n "$PH_USER" -a -n "$PH_INSTANCE" || { echo "Set the POCKETHOST_EMAIL and POCKETHOST_INSTANCE secrets."; exit 1; }
-          cd infra/pocketbase
-          sftp -P 2222 -i ~/.ssh/pockethost -o BatchMode=yes -b - "$PH_USER@ftp.pockethost.io" <<SFTP
-          cd $PH_INSTANCE
-          -mkdir pb_hooks
-          -mkdir pb_migrations
-          put pb_hooks/*.js pb_hooks/
-          put pb_migrations/*.js pb_migrations/
-          ls -l pb_hooks
-          ls -l pb_migrations
-          bye
-          SFTP
-          echo "Bundle uploaded. Restart the instance from the PocketHost dashboard to apply migrations."
+          # Stage complete files outside watched hook/migration folders, then rename them into place.
+          # Upload migrations first and shared helpers before route registration.
+          stage=".omo-deploy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          verify="$RUNNER_TEMP/pockethost-verify"
+          mkdir -p "$verify/pb_hooks" "$verify/pb_migrations"
+          batch="$RUNNER_TEMP/pockethost-sftp.batch"
+          {
+            echo "cd $PH_INSTANCE"
+            echo "-mkdir pb_hooks"
+            echo "-mkdir pb_migrations"
+            echo "mkdir $stage"
+            for file in infra/pocketbase/pb_migrations/*.js infra/pocketbase/pb_hooks/*.js; do
+              relative="${file#infra/pocketbase/}"
+              name="${relative##*/}"
+              echo "put $file $stage/$name"
+            done
+            for file in infra/pocketbase/pb_migrations/*.js infra/pocketbase/pb_hooks/message-cache.js infra/pocketbase/pb_hooks/installation.js infra/pocketbase/pb_hooks/operations.js infra/pocketbase/pb_hooks/*.pb.js; do
+              relative="${file#infra/pocketbase/}"
+              name="${relative##*/}"
+              echo "rename $stage/$name $relative"
+              echo "get $relative $verify/$relative"
+            done
+            echo "rmdir $stage"
+            echo "bye"
+          } > "$batch"
+          sftp -P 2222 -i ~/.ssh/pockethost -o BatchMode=yes -b "$batch" "$PH_USER@ftp.pockethost.io"
+          for file in infra/pocketbase/pb_migrations/*.js infra/pocketbase/pb_hooks/*.js; do
+            relative="${file#infra/pocketbase/}"
+            cmp "$file" "$verify/$relative" || { echo "Remote bundle verification failed: $relative"; exit 1; }
+          done
+          echo "Every uploaded hook and migration matches this commit. Verify storage readiness before deploying clients."
+      - name: Remove temporary deployment key
+        if: always()
+        run: rm -f ~/.ssh/pockethost

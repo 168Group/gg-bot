@@ -2,7 +2,9 @@ import type { ModuleRecord, RecordPage, JobOptions } from '../../module-sdk/src/
 import type { Access, CatalogChannel, ModuleState } from '../../module-sdk/src/browser.js';
 import type { Observation } from '../../module-sdk/src/server.js';
 import type { LoggingSettings, LogEvent } from '../../../modules/logging/shared/settings.js';
+import type { MessageCacheBatch } from '../../../modules/logging/shared/message-cache.js';
 
+export interface SecretRecord { mode: 'stored' | 'disabled' | 'environment'; ciphertext: string | null; revision: number }
 export interface SessionRecord {
   id_hash: string; user_id: string; label: string; tokens: string; csrf_hash: string;
   checked_at: string | null; access: Access | null;
@@ -18,11 +20,14 @@ export interface StorageStatus {
 export interface EventFilter { type?: string; subject?: string; cursor?: string; limit: number }
 type Op<I, O> = { input: I; output: O };
 export interface Operations {
-  ready: Op<Record<string, never>, { protocol: 1; trafficProtocol?: 1 }>;
-  workerPoll: Op<{ moduleIds: string[]; jobModuleIds: string[]; status: string; details: Record<string, unknown> }, { modules: ModuleState[]; jobsDue: boolean; deliveriesDue: number }>;
+  ready: Op<Record<string, never>, { protocol: 1; trafficProtocol?: 1; secretsProtocol?: 1; messageCacheProtocol?: 1 }>;
+  workerPoll: Op<{ moduleIds: string[]; jobModuleIds: string[]; status: string; details: Record<string, unknown>; messageCache?: MessageCacheBatch }, { modules: ModuleState[]; jobsDue: boolean; deliveriesDue: number }>;
+  messageCacheLoad: Op<{ cursor: string }, RecordPage>;
   dashboardSnapshot: Op<{ moduleIds: string[] }, { modules: ModuleState[]; status: StorageStatus; events: LogEvent[] }>;
   deliveryPrepare: Op<Record<string, never>, { delivery: DeliveryClaim; event: LogEvent; module: ModuleState } | null>;
   deliveryVerify: Op<{ id: string; claimToken: string; revision: number }, boolean>;
+  secretGet: Op<{ moduleId: string; name: string }, SecretRecord | null>;
+  secretSet: Op<{ moduleId: string; name: string; expected: number; mode: SecretRecord['mode']; ciphertext: string | null }, SecretRecord>;
   workerVerify: Op<Record<string, never>, null>;
   initialize: Op<{ displayName: string; modules: { id: string; settings: unknown; settingsVersion: number }[] }, null>;
   moduleUpgrade: Op<{ id: string; expected: number; fromVersion: number; toVersion: number; settings: unknown }, ModuleState>;

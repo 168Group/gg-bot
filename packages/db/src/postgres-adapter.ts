@@ -1,11 +1,12 @@
 import { postgresResources } from './postgres-resources.js';
+import { secretSetSchema, secretScopeSchema } from './secret-contract.js';
 import { resourceSchemas } from './module-resources.js';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { PostgresDatabase, PostgresGuildStore } from './postgres.js';
 import { PostgresLoggingRepository, eventFilter } from './postgres-logging.js';
 import { GuildStore } from './index.js';
-import type { Operations, StorageDriver, JobRecord, DeliveryClaim, SessionRecord, StorageStatus } from './contracts.js';
+import type { Operations, StorageDriver, JobRecord, DeliveryClaim, SessionRecord, StorageStatus, SecretRecord } from './contracts.js';
 import { HttpError } from '../../core/src/access.js';
 const moduleIds = z.array(z.string().regex(/^[a-z][a-z0-9-]{0,31}$/)).max(100).transform(ids => [...new Set(ids)]);
 type Handlers = { [K in keyof Operations]: (input: Operations[K]['input']) => Promise<Operations[K]['output']> };
@@ -17,14 +18,28 @@ export class PostgresAdapter extends PostgresDatabase implements StorageDriver {
     const core = new PostgresGuildStore(this, guild), logs = new PostgresLoggingRepository(core);
     const handlers: Handlers = {
       ...postgresResources(this, guild),
+      secretGet: async input => {
+        const { moduleId, name } = secretScopeSchema.parse(input); await core.getModule(moduleId);
+        return (await this.query<SecretRecord>('SELECT mode,ciphertext,revision FROM module_secret WHERE guild_id=$1 AND module_id=$2 AND name=$3', [guild, moduleId, name]))[0] ?? null;
+      },
+      secretSet: async input => {
+        const { moduleId, name, expected, mode, ciphertext } = secretSetSchema.parse(input); await core.getModule(moduleId);
+        const rows = expected === 0
+          ? await this.query<SecretRecord>('INSERT INTO module_secret(guild_id,module_id,name,mode,ciphertext,revision) VALUES($1,$2,$3,$4,$5,1) ON CONFLICT DO NOTHING RETURNING mode,ciphertext,revision', [guild, moduleId, name, mode, ciphertext])
+          : await this.query<SecretRecord>('UPDATE module_secret SET mode=$4,ciphertext=$5,revision=revision+1 WHERE guild_id=$1 AND module_id=$2 AND name=$3 AND revision=$6 RETURNING mode,ciphertext,revision', [guild, moduleId, name, mode, ciphertext, expected]);
+        if (!rows[0]) throw new HttpError(409, 'REVISION_CONFLICT', 'Secret changed. Refresh its status before trying again.');
+        return rows[0];
+      },
       workerPoll: async input => {
         const ids = moduleIds.parse(input.moduleIds), jobs = moduleIds.parse(input.jobModuleIds);
+        if (input.messageCache) await logs.syncMessageCache(input.messageCache);
         const modules = await Promise.all(ids.map(id => core.getModule(id)));
         await core.heartbeat(input.status, input.details);
         const due = await this.query(`SELECT id FROM core_job WHERE guild_id=$1 AND module_id=ANY($2::text[]) AND expires_at>now() AND due_at<=now() AND (state='pending' OR (state='sending' AND lease_until<now())) LIMIT 1`, [guild, jobs]);
         const deliveries = ids.includes('logging') ? await this.query(`SELECT d.id FROM logging_delivery d JOIN logging_event e ON e.id=d.event_id AND e.guild_id=d.guild_id WHERE d.guild_id=$1 AND e.expires_at>now() AND ((d.state='pending' AND d.next_attempt<=now()) OR (d.state='sending' AND d.lease_until<now())) LIMIT 5`, [guild]) : [];
         return { modules, jobsDue: due.length > 0, deliveriesDue: deliveries.length };
       },
+      messageCacheLoad: input => logs.loadMessageCache(input.cursor),
       dashboardSnapshot: async ({ moduleIds: ids }) => {
         const selected = moduleIds.parse(ids);
         return { modules: await Promise.all(selected.map(id => core.getModule(id))), status: await handlers.status({}), events: selected.includes('logging') ? (await logs.list({ limit: 5 })).events : [] };
@@ -47,7 +62,7 @@ export class PostgresAdapter extends PostgresDatabase implements StorageDriver {
         });
         return core.getModule(id);
       },
-      ready: async () => { await this.query('SELECT desired_revision FROM module_config LIMIT 0'); return { protocol: 1, trafficProtocol: 1 }; },
+      ready: async () => { await this.query('SELECT desired_revision FROM module_config LIMIT 0'); await this.query('SELECT revision FROM module_secret LIMIT 0'); return { protocol: 1, trafficProtocol: 1, secretsProtocol: 1, messageCacheProtocol: 1 }; },
       workerVerify: async () => { await this.query('SELECT 1'); return null; },
       initialize: async ({ displayName, modules }) => {
         await this.transaction(async client => {

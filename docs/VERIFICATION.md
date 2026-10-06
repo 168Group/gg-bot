@@ -1,6 +1,16 @@
 # Verification record
 
-Updated 2026-10-01. Pinned environment: Node 24.21.0, pnpm 10.34.5, PocketBase 0.40.4 and PostgreSQL 17.10.0. No production credentials or real Discord account were used.
+Updated 2026-10-06. Pinned environment: Node 24.21.0, pnpm 10.34.5, PocketBase 0.40.4 and PostgreSQL 17.10.0. No production credentials or real Discord account were used.
+
+## Persistent message snapshots and channel labels
+
+The 2026-10-06 regressions reproduced lost deletion content after one hour, cache loss on a cosmetic settings change, and message embeds that identified a channel solely through a Discord-resolved mention. The fixes add a 5,000-message/24-hour memory and persistent cache, batched into workerPoll, plus captured channel names and explicit channel IDs.
+
+`pnpm check` passed (78 unit tests and 87 integration tests at that point), as did production/fixture builds, PocketHost bundle generation and all 18 desktop/mobile browser tests. Follow-up paging, category/thread exclusions, old-hook refusal and the 1,000-message HTTP-budget cases passed with typecheck/lint and the affected suites (74 tests), bringing the suite totals to 80 unit and 89 integration cases. Desktop edit and mobile deletion preview screenshots were visually reviewed. The new budget fixture uses the actual adapter, collector, persistent-cache manager and worker cycle with simulated HTTP responses; it confirms 1,000 ordinary messages add no per-message storage requests. This is not a hosted load test.
+
+Real PostgreSQL/PocketBase coverage includes restoration into a fresh collector, author/content preservation through edit/delete, snapshot removals, expiry, the persistent count limit, startup paging, malformed-batch rejection, policy pruning and disabled-write rejection. Unit coverage exercises retries and updates/deletions during an in-flight batch, Unicode request-size limits, restored snapshot expiry and preservation of newer live messages. PocketBase worker ownership also fences cache loads. Existing database migrations remain unchanged; the new hook and matching operations file must be installed before clients requiring messageCacheProtocol:1.
+
+Production deployment, real Gateway resume/replay and live Discord permission/rendering checks were not performed. Initialization/downtime and unflushed changes remain coverage limits; a saved snapshot may predate an unseen edit.
 
 ## Foundation results
 
@@ -63,3 +73,21 @@ Real PostgreSQL/PocketBase regressions cover combined module/heartbeat snapshots
 Browser tests verify a single shared workspace request on load, one request per accelerated minute for three minutes despite multiple mounted consumers, explicit refresh, and preservation of dirty logging drafts. Full fixture flows still pass for logging, modules and setup. Reviewed mobile screenshot: `test-results/workspace-budget-mobile.png`; desktop equivalent is also available locally. These are ignored artifacts.
 
 Only operations.js needs replacement on the hosted instance; migrations are unchanged. Bundle manifest includes trafficProtocol 1 and file SHA-256 hashes. Comet reported the Mac locked, so live hook upload, client deployment and sustained hosted quota observation remain pending. Do not deploy current clients against old hooks.
+
+## Declared module secrets
+
+Baseline before edits: typecheck, lint, 68 unit tests, 70 integration tests and production build passed. The completed feature passes typecheck, lint, 68 unit tests, 80 integration tests, production/fixture builds, 16 desktop/mobile browser tests and PocketHost bundle generation. The first browser run had two navigation assertions read the old DOM before the React route transition finished; waiting for the destination heading corrected those assertions, and the complete suite passed afterward.
+
+Ten new real-provider cases test ciphertext at rest; authenticated guild/module/name binding; unknown names; concurrent creation/replacement/deletion; monotonic tombstones; explicit environment restoration; missing/wrong encryption keys; corrupted ciphertext; per-job rotation/deletion behavior; and owner-only, fresh-membership/CSRF-protected endpoints. Metadata and job results are checked for absence of synthetic credentials. Managed-runtime tests verify encrypted-profile persistence and retry after a failed key save before starting children.
+
+Desktop/mobile tests cover masked defaults with zero automatic reveal requests, cleared password inputs after saving, explicit Show/Hide, 30-second expiry, navigation clearing, ignored late responses after Hide/close, deletion/fallback controls and absence from browser persistence. Reviewed screenshot: `test-results/module-secret-mobile.png`; desktop equivalent is available locally. Tests use synthetic credentials only. No community API behavior or production deployment was included.
+
+PocketBase requires the new module-secret migration and matching hooks; PostgreSQL requires migration 0004. Clients check secretsProtocol:1. Bot/web must receive the same dedicated MODULE_SECRET_ENCRYPTION_KEY. Changing that encryption key does not rewrap old ciphertext. The base budget's simulated idle/workload counts remain unchanged; interactive secret management and async reads add explicitly requested storage calls.
+
+## Dashboard static-asset rate limits
+
+Request GG-EVENTS-20261001-04: baseline typecheck, lint and 68 unit tests passed. The new real-server regression failed before the fix with HTTP 429 during an asset GET/HEAD burst. Afterward, typecheck, lint, production/fixture builds, 68 unit tests, 81 integration tests and all 18 desktop/mobile browser cases pass together.
+
+The integration regression serves an actual temporary static file through Fastify, requests it 150 times by GET and 150 by HEAD, then verifies the full page 120, API read 360, API write 60 and auth 20 per-minute allowances. Each next request returns 429 with Retry-After and no-store. Asset-looking query parameters do not bypass protected routes; assets still load after the application buckets are exhausted. Missing assets return 404 and unsupported methods do not return file content.
+
+Each browser project requests a built JavaScript asset 150 times, signs in and opens the dynamically loaded logging page without 429 or page errors. The full combined suite passes; the mobile screenshot test-results/asset-burst-mobile.png was visually reviewed. These are local synthetic checks, not a production rollout. Only matched GET/HEAD routes in the reserved /assets/ namespace are exempt; storage traffic and configuration are unchanged.

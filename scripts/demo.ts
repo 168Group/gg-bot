@@ -2,6 +2,7 @@ import { previewEvent } from '../modules/logging/bot/preview.js';
 import { installedDefinitions } from '../registry/definitions.js';
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
+import { readFile, writeFile } from 'node:fs/promises';
 import { localPocketBase } from './local-pocketbase.js';
 import { readConfig } from '../packages/core/src/config.js';
 import { createServer } from '../apps/web/src/server.js';
@@ -17,6 +18,10 @@ if (!existsSync('dist/dashboard-demo/index.html')) throw new Error('Run pnpm bui
 const port = Number(process.env.DEMO_PORT ?? 3000);
 const pb = await localPocketBase({ directory: process.env.DEMO_DB_DIR ?? '.local/demo-pocketbase', port: Number(process.env.DEMO_DB_PORT ?? 8091) });
 const db = pb.driver;
+const demoKeyFile = `${pb.directory}/module-secret-key`;
+try { await writeFile(demoKeyFile, randomBytes(32).toString('hex'), { flag: 'wx', mode: 0o600 }); }
+catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+process.env.MODULE_SECRET_ENCRYPTION_KEY = await readFile(demoKeyFile, 'utf8');
 const config = readConfig({ NODE_ENV: 'development', STORAGE_PROVIDER: 'pocketbase', POCKETBASE_URL: pb.url, POCKETBASE_SERVICE_KEY: pb.key, DISCORD_GUILD_ID: pb.guildId, OWNER_USER_IDS: '100000000000000002', DASHBOARD_ORIGIN: `http://localhost:${port}`, COMMUNITY_NAME: 'My Community', BOT_NAME: 'OMO Bot' });
 const store = db.scope(config.DISCORD_GUILD_ID);
 let stopped = false, activeTick: Promise<void> = Promise.resolve();

@@ -1,6 +1,14 @@
 # Implementation handoff
 
-Updated 2026-10-01. OMOBot is a modular, self-hostable Discord bot by OMOWorlds, released under Apache 2.0. One deployment serves one configured guild. README is the public entry point; ROADMAP records unfinished work.
+Updated 2026-10-06. OMOBot is a modular, self-hostable Discord bot by OMOWorlds, released under Apache 2.0. One deployment serves one configured guild. README is the public entry point; ROADMAP records unfinished work.
+
+## Persistent message cache and channel identification (2026-10-06)
+
+Message comparison now keeps up to 5,000 snapshots for 24 hours in memory and the selected database. Changed snapshots/removals travel with workerPoll, with 100-snapshot/512-KiB batch limits. Startup restores pages of 500; clean shutdown flushes pending batches. Failed writes remain retryable, and acknowledgements cannot erase a newer in-memory update. Cosmetic settings preserve eligible snapshots; exclusions and disabling message logging prune them. Resumable Gateway reconnects keep the baseline and consume replayed raw events. Crashes, downtime, expiry and count eviction still limit coverage.
+
+Message embeds capture the channel name and show the channel ID alongside the mention, so “No Access” is no longer the only channel identifier. This does not alter Discord permissions. Unavailable deleted text is explained explicitly and cannot be recovered retroactively.
+
+Both providers use their existing module-record tables. PocketBase needs updated `operations.js` plus new `message-cache.js`; clients require messageCacheProtocol:1. No new migration or key is needed. Builds, typecheck/lint, database regressions and 18 browser tests pass locally; see docs/VERIFICATION.md for counts and limits. No production rollout or live Discord acceptance was performed.
 
 ## Current implementation
 
@@ -14,6 +22,22 @@ Discord channel logs now use readable summaries for creation/deletion and change
 
 The guided setup launcher provisions local PocketBase, uploads a first-install PocketBase hook bundle over SFTP, or migrates an existing PostgreSQL database. Activation verifies Discord credentials, synchronizes commands and supervises separate bot/web services. Real Discord and hosted PocketHost deployment acceptance remain outstanding.
 
+## Dashboard asset rate limits (2026-10-01, request 04)
+
+Matched static `/assets/` GET and HEAD routes are exempt from the dashboard's application rate limits. They previously depleted the shared page and write buckets, causing JavaScript/font 429s and failed module navigation after repeated browser loads. Keep this namespace reserved for public build assets and preserve `wildcard:false` static registration. Authentication, API read/write and page budgets remain 20/360/60/120 per minute per IP. Sensitive response headers run before rate limiting, including rejected requests. This is a web-service update only; it adds no storage migration, hook protocol, environment variable or production deployment.
+
+Local typecheck, lint, production/fixture builds, 68 unit tests, 81 integration tests and all 18 desktop/mobile browser tests pass. The regression reproduced the old 429 and now verifies asset bursts plus every unchanged application budget. See docs/VERIFICATION.md.
+
+## Declared module secrets (2026-10-01)
+
+Request GG-EVENTS-20261001-03 is implemented on `codex/module-secret-vault`, based on request-budget commit 49650dc, now merged in base main as 7a1f05b. Generic owner controls appear on module cards for manifest-declared names; no community-specific API behavior was added. Async `context.secrets.get(name)` reads each work unit's current stored override or explicit environment fallback. Legacy `context.secret(name)` stays environment-only, so downstream callers must migrate to use the controls.
+
+Values use AES-256-GCM with guild/module/name associated data. The dedicated MODULE_SECRET_ENCRYPTION_KEY must match on bot/web; managed setup persists it in the encrypted profile before launching children. Database rows contain ciphertext, source mode and monotonic revisions. Deleting writes a disabled tombstone and blocks fallback; Use environment explicitly restores it. Corrupt ciphertext and missing/wrong keys never fall back. Metadata cannot tell whether the bot environment contains a value and reports configured:null for that source.
+
+Owner-only secret APIs use fresh membership and CSRF for writes/reveal, revision checks and no-store responses. Plaintext never enters query/mutation caches or browser persistence. Controls clear it on hide, navigation, page hiding and a 30-second reveal timer, ignoring late reveal responses. Typecheck, lint, 68 unit tests, 80 integration tests, production/fixture builds, 16 desktop/mobile browser tests and bundle generation pass. Both providers have encrypted-at-rest, CAS, rotation, fallback, isolation and access regression tests. See docs/MODULE_SECRETS.md for the complete contract.
+
+**Rollout differs from request 02:** this adds PostgreSQL migration 0004 and PocketBase migration 1790851200 plus updated operations.js. Readiness requires secretsProtocol:1 in addition to trafficProtocol:1. No production deployment is authorized by this request. Keep the downstream Railway merge gated on the full matching storage upgrade and shared key configuration.
+
 ## PocketHost request-budget release (2026-10-01)
 
 Implemented on branch `codex/pockethost-request-budget`. Local validation passes: typecheck, lint, 68 unit tests, 70 integration tests, production/fixture builds, 12 browser tests and bundle generation. **Deploy updated PocketBase hooks before new clients.** Only `pb_hooks/operations.js` changes; no schema migration or key rotation. `ready` now advertises `trafficProtocol: 1`; current clients explicitly require it. Old clients continue to work against new hooks. See docs/POCKETHOST.md for the hooks-first rollout and previous hook checksum.
@@ -24,7 +48,7 @@ The dashboard now uses a shared authenticated /api/workspace query refreshed eve
 
 Measured HTTP workloads (simulated time/server responses with production adapter/cycle/delivery/Fastify/Auth): 325 requests/hour for one idle module, 328 for two, and 912 for two plus 100 changes and one open overview. Counts include startup/shutdown and lease renewals. Active-workload peak is 27 requests/10 seconds. Both real providers separately verify storage semantics. This replaces the earlier 960/1080 idle estimate; it is not proof of unlimited throughput or live PocketHost performance. Bursts, retries, extra viewers and third-party module work still consume quota.
 
-Live hook upload is pending: Comet reported the Mac locked. Do not merge/deploy the downstream client PR until the hosted ready response advertises trafficProtocol 1. No credentials were read or changed.
+The original hook upload was blocked by the locked Mac. A later GitHub check confirms base PR5 merged as 7a1f05b and downstream PR7 as 4971c27 on 2026-10-01; those merges happened outside the secret-feature work. This session has not independently verified live storage capability. No production credentials or deployment settings were changed by the secret-feature implementation.
 
 ## Verified state
 
@@ -48,7 +72,7 @@ The activity-logging update passed typecheck, lint, 52 unit tests, 61 database/i
 - Enable Server Members and Message Content privileged intents in the Discord application before starting this version, even when new event switches are off. Deploy matching bot and dashboard builds. The earlier activity-collector update needed no storage changes; the current request-budget release requires updated hooks.
 - The raw Gateway collector runs before discord.js updates member/voice caches. Preserve that ordering. Member baseline fetching is bounded to 15 seconds; missing baselines record gaps instead of fabricated changes.
 - Collector policy comes from `ModuleHost.activeSettings('logging')`. Do not restore repository-local policy state: package factories can create their own repository objects. Ordinary new messages remain memory-only. Member join/leave events are not implemented; initial roles already present in a join snapshot are not fabricated as role changes.
-- Discord.js MessageManager caching is explicitly disabled. The logging collector alone holds up to 1,000 messages for 30 minutes, with 4,000 content characters and ten attachment names per snapshot. Cache state clears on applied-policy changes, disconnect and shutdown; only edits/deletions persist content under event retention. Module message subscribers still receive live message content.
+- Discord.js MessageManager caching is explicitly disabled. The logging collector holds up to 5,000 messages for 24 hours, with 4,000 content characters and ten attachment names per snapshot. A matching persistent cache batches changes into workerPoll and restores them at startup. Disabling message logging or excluding a channel removes its snapshots; cosmetic policy changes and resumable reconnects preserve them. Snapshots and edit/deletion events have separate retention periods. The persistent-cache release requires updated PocketBase hooks advertising messageCacheProtocol:1, without a new schema migration. Module message subscribers still receive live message content.
 - Message/voice subjects are not channel IDs. Exclusion checks must use channelId, category and snapshot containerId (for thread parents), both before collection and before delivery. The existing PocketBase hooks persist generic events; the delivery worker performs the additional exclusion/event-switch recheck.
 - Use the pinned Node/pnpm versions. Runtime profiles, `.env`, databases, dependencies, builds and screenshots are ignored by Git.
 - Keep migrations immutable. PocketBase uses private `omo_` SQL tables behind authenticated hooks, not public collections. Upload the complete hook/migration bundle.

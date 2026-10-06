@@ -39,6 +39,7 @@ export class Provisioner {
     } else {
       profile.env = { ...profile.env, STORAGE_PROVIDER: 'pocketbase', POCKETBASE_SERVICE_KEY: profile.env.POCKETBASE_SERVICE_KEY ?? randomBytes(32).toString('hex'), ...(input.storage.kind === 'remote' ? { POCKETBASE_URL: new URL(input.storage.url).origin } : {}) };
     }
+    profile.env.MODULE_SECRET_ENCRYPTION_KEY ??= randomBytes(32).toString('hex');
     if (!existing) state.profiles.push(profile);
     // Preserve generated runtime keys before any remote side effect so retries can finish a partial install.
     profile.ready = false; await this.store.save(state);
