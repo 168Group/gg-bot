@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { eventWindow } from '../../modules/gottagacha-events/live-model.js';
+import { eventWindow, FRESHNESS_MS } from '../../modules/gottagacha-events/live-model.js';
 test('staff can browse fixtures, replay refreshes and see safe draft guidance', async ({ page }) => {
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   await page.goto('/auth/demo');
@@ -37,11 +37,11 @@ test('staff can browse fixtures, replay refreshes and see safe draft guidance', 
   await expect(page.getByRole('heading', { name: 'Sample community game night', exact: true })).toHaveCount(0);
   expect(errors).toEqual([]);
 });
-test('API browsing displays only a fresh snapshot and expires it without waiting for changed server data', async ({ page }) => {
+test('API browsing picks up automatic updates, lasts between hourly reads and hides expired data', async ({ page }) => {
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
-  const now = Date.now(), window = eventWindow(now);
+  const now = Date.parse('2030-05-10T16:00:00Z'), window = eventWindow(now);
   // Browser presentation fixtures only. Provider/host tests cover the authenticated routes and job execution.
-  const snapshot = { source: 'api', state: 'ready', settingsRevision: 5, refreshedAt: new Date(now).toISOString(), freshUntil: now + 300000, nextRefreshAt: now + 60000, window,
+  const snapshot = { source: 'api', state: 'ready', settingsRevision: 5, refreshedAt: new Date(now).toISOString(), freshUntil: now + FRESHNESS_MS, nextRefreshAt: now + 60000, window,
     events: [{ key: 'sample', id: 'sample', title: 'Synthetic API gathering', eventDate: window.startDate, startTime: '18:30:00', endTime: null, location: 'Synthetic Warren venue', updatedAt: new Date(now).toISOString() }], publicOccurrenceCount: 1, truncated: false, message: 'Synthetic browser fixture, no API request.' };
   await page.clock.install({ time: now });
   const reads: string[] = [];
@@ -55,6 +55,8 @@ test('API browsing displays only a fresh snapshot and expires it without waiting
   await page.goto('/auth/demo'); await page.goto('/modules/gottagacha-events');
   await expect(page.getByRole('heading', { name: 'Synthetic API gathering' })).toBeVisible();
   await expect(page.getByText(`${window.startDate} at 18:30:00 (America/Detroit)`, { exact: true })).toBeVisible();
+  await expect(page.getByText(/Juunni refreshes public events automatically every hour/)).toBeVisible();
+  await expect(page.getByText(/Last checked: May 10, 2030/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Refresh from GottaGacha' })).toBeDisabled();
   await expect(page.getByText('Publishing unavailable', { exact: true })).toBeVisible();
   await expect(page.getByText('Announcement previews', { exact: true })).toHaveCount(0);
@@ -64,11 +66,16 @@ test('API browsing displays only a fresh snapshot and expires it without waiting
   await page.screenshot({ path: `test-results/gg-events-api-${test.info().project.name}.png`, fullPage: true });
   await page.clock.fastForward(61000);
   await expect(page.getByRole('button', { name: 'Refresh from GottaGacha' })).toBeEnabled();
+  snapshot.events[0]!.title = 'Updated synthetic gathering';
   await page.clock.fastForward(300000);
-  await expect(page.getByRole('heading', { name: 'Synthetic API gathering' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Updated synthetic gathering' })).toBeVisible();
+  await page.clock.fastForward(60 * 60_000);
+  await expect(page.getByRole('heading', { name: 'Updated synthetic gathering' })).toBeVisible();
+  await page.clock.fastForward(15 * 60_000);
+  await expect(page.getByRole('heading', { name: 'Updated synthetic gathering' })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Current events need a refresh.' })).toBeVisible();
   expect(reads.filter(path => path.endsWith('/settings'))).toEqual([]);
-  expect(reads.filter(path => path.endsWith('/api-snapshot'))).toHaveLength(1);
+  expect(reads.filter(path => path.endsWith('/api-snapshot')).length).toBeGreaterThan(1);
   expect(errors).toEqual([]);
 });
 test('an owner manages the events API key on its page without exposing it in settings', async ({ page }) => {

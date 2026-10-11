@@ -8,7 +8,7 @@ export const settingsSchema = z.object({
 export type EventSettings = z.infer<typeof settingsSchema>;
 export const definition = {
   manifest: {
-    id: 'gottagacha-events', name: 'GottaGacha events', version: '0.3.0', apiVersion: 1 as const,
+    id: 'gottagacha-events', name: 'GottaGacha events', version: '0.4.0', apiVersion: 1 as const,
     description: 'Browse public GottaGacha events or explore fixtures. Announcements and event publishing remain unavailable.',
     dependencies: [], requiredIntents: ['GuildMessages', 'MessageContent'],
     requiredBotPermissions: ['ViewChannel', 'SendMessages'], requiredSecrets: ['GG_API_KEY'], settingsVersion: 2

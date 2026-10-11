@@ -31,7 +31,8 @@ describe.each(['postgres', 'pocketbase'] as const)('GottaGacha events with %s', 
     vi.stubEnv('MODULE_SECRET_ENCRYPTION_KEY', 'd'.repeat(64));
     vi.stubEnv('OMO_MODULE_GOTTAGACHA_EVENTS_GG_API_KEY', environment);
     const read = vi.fn<EventReader>().mockResolvedValue({ events: [], publicOccurrenceCount: 0, truncated: false });
-    const host = new ModuleHost(guild, [createBot({ store, validateDestination: async () => {} }, read)], store, { info() {}, error() {} });
+    const newHost = () => new ModuleHost(guild, [createBot({ store, validateDestination: async () => {} }, read)], store, { info() {}, error() {} });
+    let host = newHost();
     const secrets = store.secrets(definition);
     const refresh = async () => {
       // Open the persisted cooldown between independent test jobs; cooldown semantics have separate coverage.
@@ -47,7 +48,11 @@ describe.each(['postgres', 'pocketbase'] as const)('GottaGacha events with %s', 
       await store.updateModule(moduleId, initial.desiredRevision, owner, { enabled: true, settings: { mode: 'api-readonly', staffChannelIds: [] } });
       let metadata = await secrets.replace('GG_API_KEY', 0, first);
       await host.sync(); expect(read).not.toHaveBeenCalled();
-      expect((await refresh())?.state).toBe('completed'); expect(read.mock.calls[0]?.[0]).toBe(first);
+      await runModuleJobs(store, host); // Initial automatic refresh, without a dashboard request.
+      expect((await data.get<LiveSnapshot>('api-snapshot'))?.value.state).toBe('ready');
+      expect(read.mock.calls[0]?.[0]).toBe(first);
+      await host.stop(); host = newHost(); await host.sync(); await runModuleJobs(store, host);
+      expect(read).toHaveBeenCalledOnce(); // Restart reuses the completed hourly key.
       metadata = await secrets.replace('GG_API_KEY', metadata.revision, second);
       expect((await refresh())?.state).toBe('completed'); expect(read.mock.calls[1]?.[0]).toBe(second);
       metadata = await secrets.disable('GG_API_KEY', metadata.revision);
@@ -128,6 +133,7 @@ describe.each(['postgres', 'pocketbase'] as const)('GottaGacha events with %s', 
       await host.sync();
       expect((await store.getModule(moduleId)).applyError).toBeNull();
       expect((await app.inject({ url: `${root}/api-snapshot`, ...session })).json().data).toBeNull();
+      await runModuleJobs(store, host); // Drain the automatic attempt with the missing key.
       const missing = await app.inject({ url: `${root}/refresh-api`, method: 'POST', ...session, payload: { key: crypto.randomUUID() } });
       expect(missing.statusCode).toBe(202); await runModuleJobs(store, host);
       expect((await store.call('jobGet', { id: missing.json().data.id }))?.state).toBe('failed');

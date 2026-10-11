@@ -31,8 +31,8 @@ describe('documented v1 event reads', () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(body())));
     const result = await fetchEvents(key, window, { fetcher });
     const [url, options] = fetcher.mock.calls[0]!;
-    expect(String(url)).toBe('https://gottagacha.com/api/v1/events?startDate=2030-05-10&endDate=2030-05-16');
-    expect(options).toMatchObject({ method: 'GET', redirect: 'error', headers: { Authorization: `Bearer ${key}` } });
+    expect(String(url)).toBe('https://www.gottagacha.com/api/v1/events?startDate=2030-05-10&endDate=2030-05-16');
+    expect(options).toMatchObject({ method: 'GET', redirect: 'manual', headers: { Authorization: `Bearer ${key}` } });
     expect(options!.signal).toBeInstanceOf(AbortSignal);
     expect(result.events[0]).toMatchObject({ key: `${source.id}:2030-05-10`, startTime: '19:00:00' });
     expect(JSON.stringify(result)).not.toContain('Not retained');
@@ -56,7 +56,7 @@ describe('documented v1 event reads', () => {
     const wait = vi.fn(async () => {});
     await fetchEvents(key, window, { fetcher, wait }); expect(fetcher).toHaveBeenCalledTimes(3); expect(wait.mock.calls).toEqual([[500], [1000]]);
     const broken = vi.fn<typeof fetch>().mockRejectedValue(new Error(key));
-    await expect(fetchEvents(key, window, { fetcher: broken, wait })).rejects.toThrow('deadline'); expect(broken).toHaveBeenCalledTimes(3);
+    await expect(fetchEvents(key, window, { fetcher: broken, wait })).rejects.toThrow('connect'); expect(broken).toHaveBeenCalledTimes(3);
     const invalid = vi.fn<typeof fetch>(); await expect(fetchEvents('bad', window, { fetcher: invalid })).rejects.toMatchObject({ code: 'auth' }); expect(invalid).not.toHaveBeenCalled();
   });
   it.each([[401, 'auth'], [403, 'scope'], [400, 'request'], [429, 'rate-limit']] as const)('does not immediately retry HTTP %s', async (status, code) => {
@@ -77,6 +77,17 @@ describe('documented v1 event reads', () => {
   });
 });
 describe('live cache boundary', () => {
+  it('keeps an hourly snapshot usable across venue midnight, filters yesterday and expires with bounded grace', async () => {
+    const midnight = Date.parse('2030-05-11T04:00:00Z'), fetched = midnight - 30 * 60_000;
+    const { data, records } = memory();
+    await refreshLive(data, 2, 'hourly', async () => projectResponse({ data: [source, { ...source, eventDate: '2030-05-11' }], meta: { total: 1 } }, window), () => fetched);
+    const saved = records.get('api-snapshot')!.value as LiveSnapshot;
+    const visible = liveView(saved, 2, fetched + 60 * 60_000);
+    expect(visible.state).toBe('ready');
+    expect(visible.events.map(event => event.eventDate)).toEqual(['2030-05-11']);
+    expect(visible.window).toEqual({ startDate: '2030-05-11', endDate: '2030-05-16' });
+    expect(liveView(saved, 2, fetched + 75 * 60_000).events).toEqual([]);
+  });
   it('fences concurrent refreshes, persists cooldown/replay, and hides stale or wrong-revision snapshots', async () => {
     const { data, records } = memory(); const reader = vi.fn(async () => projectResponse(body(), window));
     await refreshLive(data, 2, 'job-1', reader, () => now);

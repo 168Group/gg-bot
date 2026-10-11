@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import type { EventWindow, PublicOccurrence } from './live-model.js';
-const ENDPOINT = 'https://gottagacha.com/api/v1/events';
+// The documented apex domain redirects here. Address the verified canonical host directly
+// so credentials never need to follow a redirect to another origin.
+const ENDPOINT = 'https://www.gottagacha.com/api/v1/events';
 export const API_KEY_PATTERN = /^gg_(?:live|test)_[a-f0-9]{64}$/;
 const MAX_BYTES = 1024 * 1024;
 const time = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d$/);
@@ -64,11 +66,13 @@ export async function fetchEvents(key: string, window: EventWindow, options: Rea
   const fetcher = options.fetcher ?? fetch, wait = options.wait ?? (ms => new Promise(resolve => setTimeout(resolve, ms))), now = options.now ?? Date.now;
   const totalSignal = AbortSignal.timeout(35_000);
   for (let attempt = 0; attempt < 3; attempt++) {
+    const signal = AbortSignal.any([totalSignal, AbortSignal.timeout(options.timeoutMs ?? 10_000)]);
     try {
-      const response = await fetcher(url, { method: 'GET', redirect: 'error', signal: AbortSignal.any([totalSignal, AbortSignal.timeout(options.timeoutMs ?? 10_000)]),
+      const response = await fetcher(url, { method: 'GET', redirect: 'manual', signal,
         headers: { Authorization: `Bearer ${key}`, Accept: 'application/json' } });
       if (response.status !== 200) {
         await response.body?.cancel();
+        if (response.status >= 300 && response.status < 400) throw new EventReadError('request', 'The event API endpoint redirected. The integration endpoint needs an update.');
         if (response.status === 401) throw new EventReadError('auth', 'The API key was rejected. Check expiry or revocation on the bot service.');
         if (response.status === 403) throw new EventReadError('scope', 'The API key needs the events:read scope.');
         if (response.status === 429) {
@@ -81,7 +85,9 @@ export async function fetchEvents(key: string, window: EventWindow, options: Rea
       }
       return projectResponse(await readJson(response), window);
     } catch (error) {
-      const safe = error instanceof EventReadError ? error : new EventReadError('network', 'The event service could not be reached within its deadline. Try a refresh later.');
+      const safe = error instanceof EventReadError ? error : new EventReadError('network', signal.aborted
+        ? 'The event service could not be reached within its deadline. Try a refresh later.'
+        : 'Unable to connect to the event service. Try a refresh later.');
       if (safe.code !== 'network' || attempt === 2 || totalSignal.aborted) throw safe;
       await wait(500 * 2 ** attempt);
     }

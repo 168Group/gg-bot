@@ -8,7 +8,8 @@ import { LoggingRepository } from '../modules/logging/bot/repository.js';
 import { DeliveryWorker } from '../modules/logging/bot/delivery.js';
 import { defaultLoggingSettings, type LogEvent } from '../modules/logging/shared/settings.js';
 import type { ModuleState } from '../packages/module-sdk/src/browser.js';
-import type { DeliveryClaim, Operations, SessionRecord } from '../packages/db/src/contracts.js';
+import type { DeliveryClaim, JobRecord, Operations, SessionRecord } from '../packages/db/src/contracts.js';
+import type { ModuleRecord } from '../packages/module-sdk/src/services.js';
 import { createServer } from '../apps/web/src/server.js';
 import { readConfig } from '../packages/core/src/config.js';
 import { ActivityCollector } from '../modules/logging/bot/collect.js';
@@ -17,7 +18,7 @@ import type { GatewayDispatchPayload } from 'discord.js';
 
 // Count actual serialized HTTP requests through the production adapter, not SQL calls or source estimates.
 // In-memory responses model the server; real database semantics are covered by providers.test.ts.
-afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.useRealTimers(); });
 it.each([1, 2])('budgets a full idle hour with %i installed modules including independent lease renewals', async count => {
   const result = await workload(count, 0, false);
   expect(result.calls.workerPoll).toBe(120);
@@ -53,9 +54,21 @@ it('persists 1,000 ordinary messages through existing polls without adding per-m
   expect(result.calls.eventCapture ?? 0).toBe(0);
   expect(result.total).toBeLessThan(350);
 });
+it('budgets hourly Events reads and an open Events page alongside 100 logged changes', async () => {
+  const result = await workload(2, 100, true, 0, true);
+  expect(result.sent).toBe(100);
+  expect(result.apiReads).toBe(2); // Startup and the next hour boundary.
+  expect(result.calls.jobFinish).toBe(2);
+  expect(result.calls.recordGet).toBe(14); // Two jobs plus twelve cache views.
+  expect(result.total).toBeLessThan(1000);
+  expect(result.peakBurst).toBeLessThanOrEqual(50);
+  console.info(`PocketHost budget: hourly Events, open Events page and 100 changes = ${result.total} storage requests; peak ${result.peakBurst}/10s; ${result.apiReads} event API reads.`);
+});
 
-async function workload(moduleCount: number, changes: number, dashboard: boolean, messages = 0) {
+async function workload(moduleCount: number, changes: number, dashboard: boolean, messages = 0, liveEvents = false) {
   vi.useFakeTimers({ toFake: ['Date', 'performance', 'setTimeout', 'clearTimeout'] });
+  vi.setSystemTime(Date.parse('2030-05-10T16:30:00Z'));
+  if (liveEvents) vi.stubEnv('OMO_MODULE_GOTTAGACHA_EVENTS_GG_API_KEY', `gg_test_${'a'.repeat(64)}`);
   const guild = '100000000000000001', destination = '100000000000000010';
   const settings = { ...defaultLoggingSettings, destinationId: destination };
   const states = new Map<string, ModuleState>();
@@ -63,7 +76,12 @@ async function workload(moduleCount: number, changes: number, dashboard: boolean
   let session: SessionRecord | null = null, sent = 0;
   const cached = new Set<string>();
   const calls: Record<string, number> = {}, times: number[] = [];
+  const records = new Map<string, ModuleRecord>(), jobs = new Map<string, JobRecord & { due: number }>();
+  let apiReads = 0;
   vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+    if (String(_url).startsWith('https://www.gottagacha.com/api/v1/events?')) {
+      apiReads++; return new Response(JSON.stringify({ data: [], meta: { total: 0 } }));
+    }
     const name = _url.split('/').pop() as keyof Operations;
     const { input } = JSON.parse(init.body as string);
     calls[name] = (calls[name] ?? 0) + 1; times.push(Date.now());
@@ -71,15 +89,38 @@ async function workload(moduleCount: number, changes: number, dashboard: boolean
     switch (name) {
       case 'ready': data = { protocol: 1, trafficProtocol: 1, secretsProtocol: 1, messageCacheProtocol: 1 }; break;
       case 'initialize': for (const module of input.modules) if (!states.has(module.id)) states.set(module.id, {
-        moduleId: module.id, settingsVersion: module.settingsVersion, enabled: module.id === 'logging', appliedEnabled: module.id === 'logging',
-        settings: module.id === 'logging' ? settings : module.settings, appliedSettings: module.id === 'logging' ? settings : module.settings,
+        moduleId: module.id, settingsVersion: module.settingsVersion, enabled: module.id === 'logging' || liveEvents, appliedEnabled: module.id === 'logging' || liveEvents,
+        settings: module.id === 'logging' ? settings : liveEvents ? { mode: 'api-readonly', staffChannelIds: [] } : module.settings,
+        appliedSettings: module.id === 'logging' ? settings : liveEvents ? { mode: 'api-readonly', staffChannelIds: [] } : module.settings,
         desiredRevision: 2, appliedRevision: 2, applyError: null
       }); break;
       case 'moduleGet': data = states.get(input.id); break;
       case 'workerPoll':
         for (const id of input.messageCache?.deletes ?? []) cached.delete(id);
         for (const entry of input.messageCache?.upserts ?? []) cached.add(entry.id);
-        data = { modules: input.moduleIds.map((id: string) => states.get(id)), jobsDue: false, deliveriesDue: Math.min(pending.length, 5) }; break;
+        data = { modules: input.moduleIds.map((id: string) => states.get(id)), jobsDue: [...jobs.values()].some(job => job.state === 'pending' && job.due <= Date.now()), deliveriesDue: Math.min(pending.length, 5) }; break;
+      case 'jobEnqueue': {
+        if (!jobs.has(input.key)) jobs.set(input.key, { id: randomUUID(), module_id: input.moduleId, type: input.type, payload: input.payload,
+          state: 'pending', attempts: 0, result: null, error: null, claim_token: null, due: Date.now() + (input.options?.delayMs ?? 0),
+          expires_at: new Date(Date.now() + (input.options?.delayMs ?? 0) + input.options.ttlMs).toISOString() });
+        data = jobs.get(input.key)!.id; break;
+      }
+      case 'jobClaim': {
+        const job = [...jobs.values()].find(job => job.state === 'pending' && job.due <= Date.now());
+        if (job) { job.state = 'sending'; job.attempts++; job.claim_token = randomUUID(); }
+        data = job ?? null; break;
+      }
+      case 'jobFinish': {
+        const job = [...jobs.values()].find(job => job.id === input.id)!;
+        job.state = input.error ? 'failed' : 'completed'; job.error = input.error; break;
+      }
+      case 'workerVerify': case 'secretGet': break;
+      case 'recordGet': data = records.get(input.key) ?? null; break;
+      case 'recordPut': {
+        expect(records.get(input.key)?.revision ?? 0).toBe(input.expected);
+        data = { key: input.key, value: input.value, revision: input.expected + 1, updatedAt: new Date().toISOString() };
+        records.set(input.key, data as ModuleRecord); break;
+      }
       case 'messageCacheLoad': data = { records: [], nextCursor: null }; break;
       case 'leaseAcquire': case 'leaseRenew': case 'deliveryVerify': data = true; break;
       case 'eventCapture': {
@@ -131,9 +172,13 @@ async function workload(moduleCount: number, changes: number, dashboard: boolean
         const response = await server.app.inject({ method: 'GET', url: '/api/workspace', cookies: { omo_session: cookie!.value } });
         expect(response.statusCode).toBe(200);
       }
+      if (server && liveEvents && tick % 10 === 0) {
+        const response = await server.app.inject({ method: 'GET', url: '/api/modules/gottagacha-events/api-snapshot', cookies: { omo_session: cookie!.value } });
+        expect(response.statusCode).toBe(200); expect(response.json().data?.state).toBe('ready');
+      }
       await vi.advanceTimersByTimeAsync(pocketHostPollMs);
     }
     expect(lost).not.toHaveBeenCalled();
   } finally { await server?.app.close(); await host.stop(); await store.heartbeat('offline', {}); await release(); await db.close(); }
-  return { calls, sent, cached: cached.size, total: times.length, peakBurst: Math.max(...times.map(time => times.filter(other => other >= time && other < time + 10000).length)) };
+  return { calls, sent, apiReads, cached: cached.size, total: times.length, peakBurst: Math.max(...times.map(time => times.filter(other => other >= time && other < time + 10000).length)) };
 }

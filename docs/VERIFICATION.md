@@ -1,6 +1,24 @@
 # Verification record
 
-Updated 2026-10-06. Pinned environment: Node 24.21.0, pnpm 10.34.5, PocketBase 0.40.4 and PostgreSQL 17.10.0. No production credentials or real Discord account were used.
+Updated 2026-10-11. Pinned environment: Node 24.21.0, pnpm 10.34.5, PocketBase 0.40.4 and PostgreSQL 17.10.0. No production credentials or real Discord account were used for these tests.
+
+## Events API canonical endpoint correction
+
+On 2026-10-11, a credential-free probe returned HTTP 307 from `https://gottagacha.com/api/v1/events` to the same path/query on `https://www.gottagacha.com`, which returned HTTP 401 without credentials. The old client rejected redirects through fetch and mislabeled that exception as a deadline failure. Regression tests first reproduced the wrong URL, misleading connection error and three rejected redirect attempts against a real local HTTP server.
+
+The fixed client calls the canonical host directly and inspects redirect responses without following them. The real HTTP regression confirms a single request, zero requests to the redirect target, a specific sanitized endpoint error, and no upstream body exposure. The hanging-body test still verifies actual timeouts across three bounded attempts; connection failures now receive separate sanitized wording. A live transport probe through the patched client, stripping Authorization before sending, returned the expected authentication error in one request in 177 ms. No real credential was accessed or transmitted and no event data was fetched.
+
+The baseline and post-fix `pnpm check` passed; the final result includes typecheck, lint, 104 unit tests, 97 actual provider/integration tests and the production build. The prior 24 desktop/mobile browser cases passed for the unchanged UI; they were not repeated for this server-client-only correction. Both production services reported Online during diagnosis, with no pending work. The fix remains pending reviewed merge/deployment and a credentialed refresh.
+
+## Hourly Events refresh
+
+The unchanged baseline passed typecheck, lint, 98 unit tests, 96 real provider/integration tests and the production build. The first sandboxed integration attempt could not run local database processes; repeating with local listener permission passed. The completed hourly implementation passes typecheck/lint, 104 unit tests, 96 integration tests, production/fixture builds and all 24 desktop/mobile browser tests. The full check passed before the last two test-only additions; those additions passed with the complete unit suite and typecheck/lint.
+
+New scheduler tests exercise hourly durable job keys, restart deduplication, DST cadence, bounded enqueue retries, sanitized errors, stopping an enqueue in flight, source changes, disablement and stale revisions. Real PostgreSQL/PocketBase tests execute the automatic startup job using a privately resolved synthetic credential, restart the host without another read that hour, and retain replacement/disable/fallback behavior. Cache coverage verifies visibility past one hour, prior-date filtering at Detroit midnight and 75-minute expiry. Existing client tests retain privacy, deadline, bounded retries and failure invalidation checks.
+
+Browser tests verify the hourly explanation and last-check time, automatic retrieval of a changed synthetic snapshot without clicking refresh, continued visibility between hourly reads and local expiry despite repeated unchanged server data. Desktop/mobile screenshots were visually reviewed with no horizontal overflow: `test-results/gg-events-api-desktop.png` and `test-results/gg-events-api-mobile.png` (ignored local artifacts).
+
+The production PocketBase HTTP adapter budget harness measures **968 storage requests/hour**, maximum **41 requests/10 seconds**, with 100 logged changes, the shared minute workspace poll, a visible Events cache check every five minutes and two successful Events API reads (startup plus the next hour boundary). The Events API requests are counted separately from storage. The unchanged idle one/two-module workloads remain 326/329 storage requests/hour. This synthetic workload leaves little room under a 1,000-request allowance for additional viewers, member commands, manual refreshes or failures; it is not a hosted capacity guarantee. Production rollout and independent credentialed API/Discord acceptance remain outstanding. No new storage migration or hooks are needed.
 
 ## Persistent message snapshots and channel labels
 
