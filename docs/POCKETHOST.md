@@ -84,7 +84,7 @@ Measured in `tests/pockethost-budget.test.ts` through the production adapter, wo
 
 - One module, idle hour including startup/shutdown: **326 requests**.
 - Two installed modules, idle hour including startup/shutdown: **329 requests**. Recurring cost stays the same; startup has three more requests.
-- Two modules, 100 separately captured/delivered changes spread across 50 minutes, one overview open for the full hour: **913 requests**, peak **28 in a rolling 10-second window**.
+- Two modules, 100 separately captured/delivered changes spread across 50 minutes, one overview open for the full hour: **914 requests**, peak **29 in a rolling 10-second window** for the downstream registry. The upstream registry measured 913 and 28; the extra demo-module initialization accounts for the difference.
 
 These are measured test workloads, not live PocketHost capacity certification. They include 180 lease renewals, 120 polls, 12 maintenance catalog refreshes plus startup, one core/logging cleanup each, dashboard authorization and 59 membership refresh writes. Failures, retries, interactive navigation, explicit refreshes, external health monitors, more viewers, generic module records/jobs and bursts add requests. An hourly average does not protect against a burst cap. Ordinary new chat messages are saved as temporary snapshots in existing worker polls; they do not create event-storage requests. These totals include one startup read for an empty persistent cache; a full cache adds up to nine more reads.
 

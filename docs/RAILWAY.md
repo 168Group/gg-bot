@@ -1,6 +1,8 @@
 # Deploy on Railway
 
-One Railway project runs three services built from this repository: **pocketbase** (storage, with a persistent volume), **web** (the public dashboard) and **bot** (the private Discord worker). The web and bot services build the same image from `infra/Dockerfile` and differ only in start command and variables. PocketBase builds from `infra/Dockerfile.pocketbase`, which bakes the committed hook and migration bundle into the image, so nothing is uploaded over SFTP.
+GottaGacha uses separate Railway **bot** and **dashboard** services with PocketBase on **PocketHost**. Follow the PocketHost section below for this deployment. Check current health before assuming either service is running.
+
+For the alternative all-Railway setup, one project runs three services built from this repository: **pocketbase** (storage, with a persistent volume), **web** (the public dashboard) and **bot** (the private Discord worker). The web and bot services build the same image from `infra/Dockerfile` and differ only in start command and variables. PocketBase builds from `infra/Dockerfile.pocketbase`, which bakes the committed hook and migration bundle into the image, so nothing is uploaded over SFTP.
 
 The bot must run as exactly one replica: it holds a renewable per-guild lease in PocketBase and a second worker exits on startup.
 
@@ -14,7 +16,7 @@ Do this first: two of the variables below come from it.
 2. **General Information**: copy **Application ID**. This is `DISCORD_APPLICATION_ID`.
 3. **OAuth2**: select **Reset Secret** and copy the client secret. This is `DISCORD_CLIENT_SECRET`. Leave the **Redirects** list for now; you add the URL after Railway gives the web service a domain.
 4. **Bot**: select **Reset Token** and copy it. This is `DISCORD_BOT_TOKEN`. It is shown once.
-5. **Bot** → **Privileged Gateway Intents**: none are required for the bundled logging module, which only needs the `Guilds` intent. Enable **Message Content Intent** only if a module you install declares `GuildMessages` and `MessageContent`.
+5. **Bot** → **Privileged Gateway Intents**: enable **Server Members Intent** and **Message Content Intent** for the current installed logging module, even when its activity switches are off. Installed definitions determine requested intents. These were enabled on the confirmed GottaGacha application; verify before any application change. See [LOGGING.md](LOGGING.md).
 6. **Bot** → uncheck **Public Bot** unless you want other servers to be able to invite it. Each deployment serves one guild anyway.
 7. **Installation**: set **Install Link** to **None**. You will use the invite URL below instead.
 
@@ -28,13 +30,14 @@ https://discord.com/oauth2/authorize?client_id=APPLICATION_ID&scope=bot%20applic
 
 Replace `APPLICATION_ID` and `GUILD_ID`. The `applications.commands` scope is required or the slash commands will not register.
 
-## 2. Generate the two keys you own
+## 2. Generate the storage and encryption keys
 
-Both are random 32-byte values written as 64 hex characters:
+These are separate random 32-byte values written as 64 hex characters:
 
 ```sh
 openssl rand -hex 32   # storage key: OMO_STORAGE_KEY on pocketbase, POCKETBASE_SERVICE_KEY on web and bot
 openssl rand -hex 32   # SESSION_ENCRYPTION_KEY on web only
+openssl rand -hex 32   # MODULE_SECRET_ENCRYPTION_KEY, identical on bot and web
 ```
 
 The storage key is what the web and bot services present to PocketBase; the instance binds itself to it and to the guild ID on first start and refuses a different key or guild afterwards. The session key encrypts dashboard sessions; rotating it signs every dashboard user out.
@@ -77,6 +80,7 @@ DISCORD_GUILD_ID=<server id>
 DISCORD_APPLICATION_ID=<application id>
 DISCORD_CLIENT_SECRET=<oauth2 client secret>
 SESSION_ENCRYPTION_KEY=<session key>
+MODULE_SECRET_ENCRYPTION_KEY=<shared module-secret encryption key>
 OWNER_USER_IDS=<your user id>
 DASHBOARD_ADMIN_ROLE_IDS=
 DASHBOARD_VIEWER_ROLE_IDS=
@@ -95,6 +99,7 @@ DASHBOARD_ORIGIN=https://${{web.RAILWAY_PUBLIC_DOMAIN}}
 DISCORD_GUILD_ID=<server id>
 DISCORD_APPLICATION_ID=<application id>
 DISCORD_BOT_TOKEN=<bot token>
+MODULE_SECRET_ENCRYPTION_KEY=<same module-secret encryption key as web>
 OWNER_USER_IDS=<your user id>
 DASHBOARD_ADMIN_ROLE_IDS=
 DASHBOARD_VIEWER_ROLE_IDS=
@@ -114,7 +119,7 @@ Why each non-obvious value is what it is:
 | `WEB_TRUST_PROXY=1` | Behind Railway every request has the proxy's IP. Trusting the proxy lets per-user rate limits work instead of one shared bucket. |
 | `DASHBOARD_ORIGIN` | Must be `https://` in production. The OAuth redirect is derived from it, so it must match the Discord portal exactly. The bot uses it for the `/bot dashboard` command. |
 | `DISCORD_APPLICATION_ID` on bot | The command-sync pre-deploy step checks the token belongs to this application. |
-| `DISCORD_BOT_TOKEN` only on bot, `DISCORD_CLIENT_SECRET` and `SESSION_ENCRYPTION_KEY` only on web | The two services never share the other's secret. Both hold the storage key. |
+| `DISCORD_BOT_TOKEN` only on bot, `DISCORD_CLIENT_SECRET` and `SESSION_ENCRYPTION_KEY` only on web | Discord and session credentials remain service-specific. Both hold the storage key and the dedicated module-secret encryption key. |
 | `OWNER_USER_IDS`, role ID lists | Comma-separated Discord snowflakes. Owners always have admin access; the two role lists are optional. |
 | `BOT_HEALTH_PORT`, `BOT_HEALTH_HOST`, `DATABASE_URL` | Not set. The bot's health endpoint stays on loopback, Railway does not health-check the bot (see below), and PostgreSQL variables are unused with PocketBase. |
 
@@ -143,7 +148,7 @@ Skip the pocketbase service and run only web and bot on Railway. The instance mu
 1. In PocketHost, create a dedicated instance and pin its PocketBase version to `0.40.4`, the version the repository's contract tests run against.
 2. Under **Account → Keys**, register an Ed25519 public key scoped to that instance.
 3. Locally, run `pnpm install --frozen-lockfile` and `pnpm pocketbase:bundle`. The bundle lands in `dist/pockethost/pb_hooks` and `dist/pockethost/pb_migrations`.
-4. Connect over SFTP to `ftp.pockethost.io`, port `2222`, username your PocketHost account email, with that key. Open the folder named after the instance and upload the four files into its `pb_hooks` and the three files into its `pb_migrations`, keeping the layout flat. `sftp -P 2222 -i ~/.ssh/<key> <account email>@ftp.pockethost.io` works from a terminal.
+4. Connect over SFTP to `ftp.pockethost.io`, port `2222`, username your PocketHost account email, with that key. Open the folder named after the instance and upload all hook and migration files listed in the generated bundle manifest into the matching `pb_hooks` and `pb_migrations` directories, keeping the layout flat. `sftp -P 2222 -i ~/.ssh/<key> <account email>@ftp.pockethost.io` works from a terminal.
 5. In the instance's **Secrets**, add `OMO_STORAGE_KEY` (the storage key) and `OMO_GUILD_ID` (the server ID).
 6. Restart the instance from the PocketHost dashboard so the migrations apply and the hooks load.
 7. Set `POCKETBASE_URL` on web and bot to the instance's `https://` origin, preferably its permanent UUID hostname, and `POCKETBASE_SERVICE_KEY` to the storage key. Every other variable is unchanged.
@@ -169,3 +174,21 @@ The same check works against a Railway-hosted pocketbase service. The applicatio
 ### PostgreSQL instead of PocketBase
 
 Skip the pocketbase service and add Railway's PostgreSQL template (service name `Postgres`). On web set `STORAGE_PROVIDER=postgres`, `DATABASE_URL=${{Postgres.DATABASE_URL}}` and `MIGRATION_DATABASE_URL=${{Postgres.DATABASE_URL}}`; on bot set `STORAGE_PROVIDER=postgres` and `DATABASE_URL=${{Postgres.DATABASE_URL}}`. Drop the `POCKETBASE_*` lines. The web pre-deploy command then applies the SQL migrations.
+
+## Dashboard API-key management upgrade
+
+Owners can manage declared module credentials from Modules or the GottaGacha events page after this version is deployed. Prepare the shared MODULE_SECRET_ENCRYPTION_KEY privately on both services; do not reuse SESSION_ENCRYPTION_KEY or store it in PocketBase. Keep it securely with protected backups. Rotating this encryption key does not rewrap existing ciphertext.
+
+Before upgrading clients on PocketHost, apply `1790851200_module_secrets.js` and its matching `operations.js` bundle, then verify authenticated readiness includes `protocol:1`, `trafficProtocol:1` and `secretsProtocol:1`. PostgreSQL deployments use migration `0004_module_secrets.sql`. The previous request-budget hook-only procedure is insufficient. Follow [the full secret rollout guide](MODULE_SECRETS.md); this documentation is not authorization to deploy.
+
+## Events release over deployed main (2026-10-11)
+
+Production is currently running `7e76ca88` on both services. The Events release merges that revision and has no new PocketHost bundle, database or generic runtime changes relative to it. Confirm deployed readiness before rollout; do not replace its persistent-cache hooks with an older Events-branch bundle.
+
+For the explicitly approved rollout:
+
+1. Privately configure a single dedicated `MODULE_SECRET_ENCRYPTION_KEY` on both services. Both names were absent in the inspected Railway configuration. Keep a protected copy; do not reuse the session key.
+2. Copy the already confirmed application's ID into the bot's `DISCORD_APPLICATION_ID` and configure `node dist/sync-commands.js` as its pre-deploy command, or execute the existing synchronizer once with the bot service's environment. Do not print or copy the bot token into chat. The observed service was missing both the ID variable and the pre-deploy step.
+3. Require passing CI before merging the Events release. Both services follow main and can deploy automatically, so the main merge is a production action. Deploy matching revisions and retain a single bot worker. Verify readiness and command synchronization.
+4. As owner, save an events:read key through Events → API key → Manage secrets. Enable the module, choose API read-only, save, then explicitly refresh. Confirm the returned public events in the dashboard and `/events upcoming`. The feature does not auto-poll, announce or publish events.
+5. If acceptance fails, disable the Events module and restore the previous application revision if needed. No database rollback is required for this module-only release; preserve logging settings and stored credentials.

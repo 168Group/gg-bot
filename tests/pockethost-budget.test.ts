@@ -99,7 +99,8 @@ async function workload(moduleCount: number, changes: number, dashboard: boolean
     return new Response(JSON.stringify({ data }));
   }));
   const db = new PocketBaseAdapter('https://test.pockethost.io', 'a'.repeat(64)), store = db.scope(guild), repo = new LoggingRepository(store);
-  const modules = botRegistry(repo, async () => {}, moduleCount === 1);
+  // The downstream production registry also installs GottaGacha events. Select the measured workload explicitly.
+  const modules = botRegistry(repo, async () => {}, true).filter(module => moduleCount === 2 || module.manifest.id === 'logging');
   expect(modules).toHaveLength(moduleCount);
   await store.initialize('Test', modules);
   const lost = vi.fn(), release = await db.singleton(guild, lost);

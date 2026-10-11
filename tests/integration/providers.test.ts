@@ -17,6 +17,7 @@ import { LoggingRepository } from '../../modules/logging/bot/repository.js';
 import { defaultLoggingSettings, eventTypes, eventLabels, type LoggingSettings } from '../../modules/logging/shared/settings.js';
 import { previewEvent } from '../../modules/logging/bot/preview.js';
 import { DeliveryWorker } from '../../modules/logging/bot/delivery.js';
+import { installedDefinitions } from '../../registry/definitions.js';
 import { botRegistry } from '../../registry/bot.js';
 import { ActivityCollector } from '../../modules/logging/bot/collect.js';
 import { PersistentMessageCache } from '../../modules/logging/bot/message-cache.js';
@@ -134,6 +135,7 @@ describe.each(['postgres', 'pocketbase'] as const)('%s storage contract', provid
   });
   it('collects immediate deletions and new-member role updates through the installed production module', async () => {
     const sharedStore = store(), repo = new LoggingRepository(sharedStore);
+    await sharedStore.initialize('Test community', installedDefinitions(true));
     const host = new ModuleHost(guild, botRegistry(repo, async () => {}, true), sharedStore, { info() {}, error() {} });
     const pending: Promise<void>[] = [];
     const collector = new ActivityCollector({ guildId: guild, botId: () => destination,
@@ -383,7 +385,7 @@ describe.each(['postgres', 'pocketbase'] as const)('%s storage contract', provid
       expect(me.access).toBe('owner');
       const workspace = (await app.inject({ url: '/api/workspace', cookies })).json().data;
       expect(workspace.user.userId).toBe(owner); expect(workspace.status.storageProvider).toBe(provider);
-      expect(workspace.modules.map((m: { moduleId: string }) => m.moduleId)).toEqual(['logging', 'example']);
+      expect(workspace.modules.map((m: { moduleId: string }) => m.moduleId)).toEqual(installedDefinitions(false).map(module => module.manifest.id));
       for(let i=0;i<121;i++) await app.inject('/health/live');
       expect((await app.inject('/auth/demo')).statusCode).toBe(302);
       const inactive = await app.inject({url:'/api/modules/example/tasks',method:'POST',cookies,headers:{origin:'http://localhost:3000','x-csrf-token':me.csrf},payload:{key:randomUUID()}});

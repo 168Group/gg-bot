@@ -3,4 +3,5 @@ import type { BotModule } from '../packages/module-sdk/src/server.js';
 import type { ModulePackageServices } from '../packages/core/src/module-package.js';
 import { createBot as m0 } from '../modules/logging/bot.js';
 import { createBot as m1 } from '../modules/example/bot.js';
-export const installedBots = (services: ModulePackageServices, production: boolean): BotModule[] => { void services; void production; return [m0(services), ...(!production ? [m1(services)] : [])]; };
+import { createBot as m2 } from '../modules/gottagacha-events/bot.js';
+export const installedBots = (services: ModulePackageServices, production: boolean): BotModule[] => { void services; void production; return [m0(services), ...(!production ? [m1(services)] : []), m2(services)]; };

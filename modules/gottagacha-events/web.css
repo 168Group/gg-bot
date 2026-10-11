@@ -1,0 +1,20 @@
+.gg-events { display: grid; gap: 24px; }
+.gg-events > .page-heading { margin-bottom: 0; }
+.gg-events fieldset { display: grid; gap: 16px; border: 0; padding: 0; min-width: 0; }
+.gg-events .configuration-grid { align-items: start; }
+.gg-event-card { border-top: 1px solid var(--border, #ddd); padding: 20px 0 0; overflow-wrap: anywhere; }
+.gg-event-card h3 { margin: 8px 0; }
+.gg-event-card p { margin: 0 0 8px; }
+.gg-preview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 16px; }
+.gg-events pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.7; margin: 0; }
+.gg-example { padding: 20px; border: 1px solid var(--border, #ddd); border-radius: 12px; }
+.gg-page-actions { display: flex; gap: 12px; }
+.gg-events fieldset > * { min-width: 0; }
+.gg-events .notice { overflow-wrap: anywhere; }
+.gg-events select { min-width: 0; width: 100%; }
+.gg-live-panel { display: grid; gap: 16px; min-width: 0; }
+.gg-live-panel > p, .gg-live-panel > .notice { margin: 0; }
+.gg-live-panel > button { justify-self: start; }
+.gg-events dl { margin: 12px 0; }
+.gg-events dt { font-size: 12px; opacity: .7; }
+.gg-events dd { margin: 0 0 8px; }
