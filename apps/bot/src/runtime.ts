@@ -15,6 +15,7 @@ import { channelData, discordTransport, destinationPermissions } from './discord
 import { ActivityCollector } from '../../../modules/logging/bot/collect.js';
 import { PersistentMessageCache } from '../../../modules/logging/bot/message-cache.js';
 import type { LoggingSettings } from '../../../modules/logging/shared/settings.js';
+import { dispatchModuleMessage } from './module-messages.js';
 
 export async function startBot(config: Config, token: string, startupWaitMs = 120000) {
   const db = openStorage(config), store = db.scope(config.DISCORD_GUILD_ID);
@@ -120,14 +121,8 @@ export async function startBot(config: Config, token: string, startupWaitMs = 12
     })().catch(async () => { if (interaction.deferred) await interaction.editReply('Command unavailable. Check dashboard diagnostics.').catch(() => {}); });
   });
   client.on(Events.MessageCreate, message => {
-    if (stopped || !ready || message.guildId !== store.guildId || !message.guild || message.author.bot || message.webhookId || !host.hasMessageInterest(message.channelId)) return;
-    void (async () => {
-      const member = await message.guild!.members.fetch({user:message.author.id,force:true});
-      const access = accessFor(config, member.id, [...member.roles.cache.keys()], true);
-      await host.message({ guildId: store.guildId, userId: member.id, channelId: message.channelId, access, options: {}, id: message.id, content: message.content,
-        reply: async text => { await message.reply({ content: text.slice(0, 2000), allowedMentions: { parse: [], repliedUser: false } }); }
-      });
-    })().catch(() => { console.error('Module message dispatch failed.'); });
+    void dispatchModuleMessage(message, { config, host, botId: client.user?.id, available: () => !stopped && ready })
+      .catch(() => { console.error('Module message dispatch failed.'); });
   });
   client.on(Events.ShardDisconnect, () => { ready = false; });
   client.on(Events.ShardResume, () => { ready = initialized; });

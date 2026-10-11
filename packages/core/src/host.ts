@@ -1,6 +1,6 @@
 import type { ModuleState } from '../../module-sdk/src/browser.js';
 import { moduleSecretKey } from './module-secrets.js';
-import type { BotModule, Logger, ModuleConfigurationStore, Observation, CommandContext, ModuleJob, ModuleMessage, MessageSubscription } from '../../module-sdk/src/server.js';
+import type { BotModule, Logger, ModuleConfigurationStore, Observation, CommandContext, ModuleJob, ModuleMessage, MessageSubscription, BotMentionSubscription } from '../../module-sdk/src/server.js';
 import { commandAllowed, commandDefinitions } from './module-commands.js';
 import { validateRegistry } from './registry.js';
 
@@ -11,6 +11,7 @@ export class ModuleHost {
   private commands = new Map<string, { owner: string; run: (context: CommandContext) => Promise<string> }>();
   private jobs = new Map<string, (job: ModuleJob) => Promise<string>>();
   private messages = new Map<string, { subscription: MessageSubscription; run: (message: ModuleMessage) => Promise<void> }>();
+  private mentions = new Map<string, { subscription: BotMentionSubscription; run: (message: ModuleMessage) => Promise<void> }>();
   private cleanup = new Map<string, Array<() => void | Promise<void>>>();
   private revisions = new Map<string, number>();
   private active = new Set<string>();
@@ -63,6 +64,11 @@ export class ModuleHost {
                   if (!module.manifest.requiredIntents.includes('GuildMessages') || !module.manifest.requiredIntents.includes('MessageContent')) throw new Error('Message handlers require GuildMessages and MessageContent intents.');
                   if (this.messages.has(id)) throw new Error('Register one message handler per module.');
                   this.messages.set(id, { subscription, run });
+                },
+                onBotMention: (subscription, run) => {
+                  if (!module.manifest.requiredIntents.includes('GuildMessages') || !module.manifest.requiredIntents.includes('MessageContent')) throw new Error('Mention handlers require GuildMessages and MessageContent intents.');
+                  if (this.mentions.has(id)) throw new Error('Register one bot mention handler per module.');
+                  this.mentions.set(id, { subscription, run });
                 },
                 secrets: { get: async name => {
                   if (!module.manifest.requiredSecrets?.includes(name)) throw new Error('Secret is not declared by this module.');
@@ -127,14 +133,22 @@ export class ModuleHost {
   /** Stable, schema-validated settings accepted by the running module, not merely saved in storage. */
   activeSettings(moduleId: string): unknown | null { return this.active.has(moduleId) ? this.settings.get(moduleId) ?? null : null; }
   activeJobModuleIds() { return this.modules.filter(module => this.active.has(module.manifest.id) && Object.keys(module.jobSchemas ?? {}).length > 0).map(module => module.manifest.id); }
-  hasMessageInterest(channelId: string) {
-    return [...this.messages].some(([id, m]) => { try { return this.active.has(id) && m.subscription.channelIds().includes(channelId); } catch { this.logger.error(`${id}: channel subscription failed`); return false; } });
+  hasMessageInterest(channelId: string, mentionsBot = false) {
+    return [...this.messages].some(([id, m]) => { try { return this.active.has(id) && m.subscription.channelIds().includes(channelId); } catch { this.logger.error(`${id}: channel subscription failed`); return false; } })
+      || (mentionsBot && [...this.mentions.keys()].some(id => this.active.has(id)));
   }
   message(message: ModuleMessage): Promise<void> {
     if (message.guildId !== this.guildId || !message.channelId || message.content.length > 4000) return Promise.resolve();
     return this.enqueue(async () => {
       for (const [id, entry] of this.messages) {
-        if (!this.active.has(id) || !entry.subscription.channelIds().includes(message.channelId!) || !commandAllowed(entry.subscription.access, message.access)) continue;
+        try {
+          if (!this.active.has(id) || !entry.subscription.channelIds().includes(message.channelId!) || !commandAllowed(entry.subscription.access, message.access)) continue;
+          await entry.run(message);
+        } catch { this.failures++; this.logger.error(`${id}: message handler failed`); }
+      }
+      if (!message.mentionsBot) return;
+      for (const [id, entry] of this.mentions) {
+        if (!this.active.has(id) || !commandAllowed(entry.subscription.access, message.access)) continue;
         try { await entry.run(message); } catch { this.failures++; this.logger.error(`${id}: message handler failed`); }
       }
     });
@@ -149,7 +163,7 @@ export class ModuleHost {
   }
   private async dispose(module: BotModule, reason: string) {
     const id = module.manifest.id;
-    this.handlers.delete(id); this.messages.delete(id);
+    this.handlers.delete(id); this.messages.delete(id); this.mentions.delete(id);
     for (const key of this.jobs.keys()) if (key.startsWith(`${id}:`)) this.jobs.delete(key);
     for (const [name, command] of this.commands) if (command.owner === id) this.commands.delete(name);
     try { await module.stop(reason); } catch { this.logger.error(`${id}: stop failed`); } finally {

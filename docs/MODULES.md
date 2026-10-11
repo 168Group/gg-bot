@@ -76,6 +76,20 @@ context.onMessage({ channelIds: () => settings.staffChannelIds, access: 'admin' 
 
 The host restricts dispatch to subscribed channels and the configured guild, ignores bot/webhook messages, re-fetches membership for authorization, and suppresses mentions in its reply helper. Message content is not persisted by the host; the module chooses its own bounded draft storage/retention. A language-model parser must treat message content as input, never as authority to bypass permissions or publish automatically.
 
+For explicit mentions of the connected bot in any accessible guild channel, declare the same `GuildMessages` and `MessageContent` intents and register a separate handler:
+
+```ts
+context.onBotMention({ access: 'member' }, async message => {
+  // Apply module-specific keyword matching here before doing any external work.
+  if (!message.content.toLowerCase().includes('help')) return;
+  await message.reply('Use the dashboard to configure this module.');
+});
+```
+
+Each module may register one `onMessage` handler and one `onBotMention` handler independently. If both match, the channel handler runs first and each authorized handler runs once; a failed handler does not suppress the other. `access: 'member'` accepts a freshly verified guild member, while `access: 'admin'` requires a configured dashboard admin or owner. Disabling the module, failed startup and shutdown remove both subscriptions.
+
+The runtime sets optional `message.mentionsBot` only from literal `<@currentBotId>` or `<@!currentBotId>` text. Another identity, role/everyone mentions and reply-only inferred mentions do not qualify. Missing metadata is treated as false by the host. Ordinary traffic outside selected channels is filtered before membership lookup and adds no module-routing Discord or storage requests. Existing logging collection is independent. Messages over 4,000 characters are rejected; replies are limited to 2,000 characters and suppress all mention notifications, including reply pings. The runtime rechecks availability after membership lookup and before replying. No embed or arbitrary outbound-send capability is added.
+
 See [Discord intents](https://github.com/discord/discord-api-docs/blob/main/developers/events/gateway.mdx) and [application commands](https://github.com/discord/discord-api-docs/blob/main/developers/interactions/application-commands.mdx).
 
 ## Secrets and settings upgrades

@@ -20,6 +20,13 @@ Browser tests verify the hourly explanation and last-check time, automatic retri
 
 The production PocketBase HTTP adapter budget harness measures **968 storage requests/hour**, maximum **41 requests/10 seconds**, with 100 logged changes, the shared minute workspace poll, a visible Events cache check every five minutes and two successful Events API reads (startup plus the next hour boundary). The Events API requests are counted separately from storage. The unchanged idle one/two-module workloads remain 326/329 storage requests/hour. This synthetic workload leaves little room under a 1,000-request allowance for additional viewers, member commands, manual refreshes or failures; it is not a hosted capacity guarantee. Production rollout and independent credentialed API/Discord acceptance remain outstanding. No new storage migration or hooks are needed.
 
+## Explicit bot-mention subscriptions (2026-10-11)
+
+Baseline: typecheck, lint, 80 unit tests, 89 integration tests and production build passed on Node 24.21.0 and pnpm 10.34.5. After implementation: typecheck, lint, 94 unit tests, 89 real provider/integration tests, production build and PocketBase bundle generation pass. Initial new-test type errors (an unused import, Discord event payload narrowing and parameterized-array shape) were corrected before the suite passed.
+
+Fourteen new cases cover host registration, independent staff/member/admin access, missing intents, duplicate/failed-start cleanup, disable/re-enable/shutdown, handler failure isolation and serialized draining. Synthetic MessageCreate events exercise the production routing helper and real ModuleHost for both literal mention syntaxes, wrong identities, role/everyone and reply-only mentions, DMs, other guilds, bots/webhooks, unavailable runtime, fresh roles, failed/mismatched membership, shutdown while lookup is pending, no-ping replies and exact input/reply bounds. Uninterested traffic is checked for zero membership and host-storage calls. Existing activity collection and provider regressions remain unchanged. No live Discord connection or production deployment was performed.
+
+
 ## Persistent message snapshots and channel labels
 
 The 2026-10-06 regressions reproduced lost deletion content after one hour, cache loss on a cosmetic settings change, and message embeds that identified a channel solely through a Discord-resolved mention. The fixes add a 5,000-message/24-hour memory and persistent cache, batched into workerPoll, plus captured channel names and explicit channel IDs.
