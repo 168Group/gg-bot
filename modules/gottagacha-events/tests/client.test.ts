@@ -77,6 +77,17 @@ describe('documented v1 event reads', () => {
   });
 });
 describe('live cache boundary', () => {
+  it('keeps an hourly snapshot usable across venue midnight, filters yesterday and expires with bounded grace', async () => {
+    const midnight = Date.parse('2030-05-11T04:00:00Z'), fetched = midnight - 30 * 60_000;
+    const { data, records } = memory();
+    await refreshLive(data, 2, 'hourly', async () => projectResponse({ data: [source, { ...source, eventDate: '2030-05-11' }], meta: { total: 1 } }, window), () => fetched);
+    const saved = records.get('api-snapshot')!.value as LiveSnapshot;
+    const visible = liveView(saved, 2, fetched + 60 * 60_000);
+    expect(visible.state).toBe('ready');
+    expect(visible.events.map(event => event.eventDate)).toEqual(['2030-05-11']);
+    expect(visible.window).toEqual({ startDate: '2030-05-11', endDate: '2030-05-16' });
+    expect(liveView(saved, 2, fetched + 75 * 60_000).events).toEqual([]);
+  });
   it('fences concurrent refreshes, persists cooldown/replay, and hides stale or wrong-revision snapshots', async () => {
     const { data, records } = memory(); const reader = vi.fn(async () => projectResponse(body(), window));
     await refreshLive(data, 2, 'job-1', reader, () => now);
