@@ -23,6 +23,7 @@ export default function LiveEventsPanel({ state, dirty }: { state: ModuleState |
   return <section className="panel settings-form gg-live-panel">
     <div className="panel-heading"><h2>This week in Warren</h2><Badge tone={fresh ? 'good' : 'warn'}>{fresh ? 'Recent API snapshot' : 'Needs refresh'}</Badge></div>
     <p>Juunni refreshes public events automatically every hour, even when this page is closed. Use the button for changes you want to check sooner.</p>
+    <p>In Discord, try <code>@Juunnii events</code> or mention the bot and ask “Any events coming up?” You can also use <code>/events upcoming</code>.</p>
     <button className="primary" disabled={user.access === 'viewer' || !active || dirty || pending || Boolean(cooldown)} onClick={() => run.mutate()}><RefreshCw size={16}/>Refresh from GottaGacha</button>
     {!active && <Notice>Enable the module and wait for its settings to apply. An owner can configure the API key in Manage secrets before refreshing.</Notice>}
     {cooldown && <small>You can refresh again when the cooldown ends.</small>}

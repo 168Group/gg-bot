@@ -26,8 +26,15 @@ Updated 2026-10-11. Unchecked requirements are unfinished work. The verified fir
 - [x] Configure the confirmed `DISCORD_APPLICATION_ID` on the bot and run the existing guild-command synchronizer. The bot uses the dashboard application-ID reference and a synchronization pre-deploy step; the new deployment logs confirm success.
 - [x] Owner reports adding the API key and completing Events setup.
 - [ ] Independently verify a credentialed API refresh and `/events upcoming`; local tests use synthetic responses.
-- [x] Reproduce the Events API apex-to-www HTTP 307 and correct the fixed endpoint. Redirects now fail once with an endpoint error, while actual timeouts and connection failures remain distinct. No real key was accessed; fix is pending PR #10 rollout.
-- [ ] Review and authorize rollout of hourly refresh (module 0.4.0). It activates automatically for already enabled API mode, uses the existing key, and requires matching bot/dashboard code with no new storage changes.
+- [x] Reproduce the Events API apex-to-www HTTP 307 and correct the fixed endpoint. Redirects now fail once with an endpoint error, while actual timeouts and connection failures remain distinct. No real key was accessed; fix merged in PR #10 as `dbdbe93c`.
+- [x] Owner merged hourly refresh (module 0.4.0) in PR #10. Both latest Railway deployments report success and both services are Online. Independent credentialed Events acceptance remains above.
+
+## Events mention browsing
+
+- [x] Integrate merged OMOBot PR #9 (`969febf9`) for independent explicit bot-mention subscriptions without changing staff draft authorization.
+- [x] Add downstream event/events keyword matching, shared readable cache-only replies, bounded repetition limits and a dashboard usage hint.
+- [ ] Complete reviewed rollout of module 0.5.0 and verify real Discord mentions and `/events upcoming`, including channel Read Message History permission. Local synthetic Gateway and both-provider checks are recorded in docs/VERIFICATION.md.
+- [ ] Measure realistic hosted member-browsing traffic. Each accepted mention adds a cache read; process-local cooldowns limit bursts but are not a hosted request-budget guarantee.
 
 ## Module credentials
 

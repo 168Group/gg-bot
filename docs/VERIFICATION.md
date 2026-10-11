@@ -2,13 +2,23 @@
 
 Updated 2026-10-11. Pinned environment: Node 24.21.0, pnpm 10.34.5, PocketBase 0.40.4 and PostgreSQL 17.10.0. No production credentials or real Discord account were used for these tests.
 
+## GottaGacha mention browsing and readable replies
+
+The downstream baseline passed typecheck, lint, 104 unit tests, 97 actual provider/integration tests and the production build. After integrating reviewed, merged OMOBot PR #9 (`969febf9`) and wiring the downstream module, `pnpm check` passes typecheck, lint, 129 unit tests, 97 provider/integration tests and the production build. Two unused test-argument lint errors were corrected before the final passing run. Module registries were regenerated without changes.
+
+New formatter and module tests exercise day grouping, 12-hour local times, empty versus unavailable results, expiry, hostile formatting/mentions, Unicode-safe length limits, fixture labeling, whole-word matching and bounded reply deduplication/cooldowns. Synthetic Discord messages pass through the production routing helper, real ModuleHost and Events module. They verify both bot mention syntaxes, no replies/cache reads for unrelated content, the shared slash response, no member-triggered API reads, disable/source changes, sanitized storage failures and independent staff draft authorization without double replies. Existing actual PostgreSQL and PocketBase flows now also read the refreshed cache through mention handlers and confirm no second API request. The upstream routing regressions cover runtime exclusions, fresh membership, shutdown and no-ping replies.
+
+All 24 desktop/mobile browser cases pass against the running local app, including the new mention usage hint, automatic cache updates and existing logging, setup and secret controls. The desktop/mobile Events screenshots were visually reviewed with no overflow (`test-results/gg-events-api-desktop.png` and `test-results/gg-events-api-mobile.png`, ignored local artifacts).
+
+Production Discord mention delivery and rendering remain unverified. No production credential or real API/event write was used. Mention cooldowns are process-local; each accepted request still uses storage and needs headroom beyond the measured hourly workload below. No additional migration or hook bundle is required by this update.
+
 ## Events API canonical endpoint correction
 
 On 2026-10-11, a credential-free probe returned HTTP 307 from `https://gottagacha.com/api/v1/events` to the same path/query on `https://www.gottagacha.com`, which returned HTTP 401 without credentials. The old client rejected redirects through fetch and mislabeled that exception as a deadline failure. Regression tests first reproduced the wrong URL, misleading connection error and three rejected redirect attempts against a real local HTTP server.
 
 The fixed client calls the canonical host directly and inspects redirect responses without following them. The real HTTP regression confirms a single request, zero requests to the redirect target, a specific sanitized endpoint error, and no upstream body exposure. The hanging-body test still verifies actual timeouts across three bounded attempts; connection failures now receive separate sanitized wording. A live transport probe through the patched client, stripping Authorization before sending, returned the expected authentication error in one request in 177 ms. No real credential was accessed or transmitted and no event data was fetched.
 
-The baseline and post-fix `pnpm check` passed; the final result includes typecheck, lint, 104 unit tests, 97 actual provider/integration tests and the production build. The prior 24 desktop/mobile browser cases passed for the unchanged UI; they were not repeated for this server-client-only correction. Both production services reported Online during diagnosis, with no pending work. The fix remains pending reviewed merge/deployment and a credentialed refresh.
+The baseline and post-fix `pnpm check` passed; the final result includes typecheck, lint, 104 unit tests, 97 actual provider/integration tests and the production build. The prior 24 desktop/mobile browser cases passed for the unchanged UI; they were not repeated for this server-client-only correction. Both production services reported Online during diagnosis, with no pending work. The owner subsequently merged the fix in PR #10; both latest Railway deployments report success. Independent credentialed refresh acceptance remains outstanding.
 
 ## Hourly Events refresh
 
