@@ -26,8 +26,15 @@ Updated 2026-10-11. Unchecked requirements are unfinished work. The verified fir
 - [x] Configure the confirmed `DISCORD_APPLICATION_ID` on the bot and run the existing guild-command synchronizer. The bot uses the dashboard application-ID reference and a synchronization pre-deploy step; the new deployment logs confirm success.
 - [x] Owner reports adding the API key and completing Events setup.
 - [ ] Independently verify a credentialed API refresh and `/events upcoming`; local tests use synthetic responses.
-- [x] Reproduce the Events API apex-to-www HTTP 307 and correct the fixed endpoint. Redirects now fail once with an endpoint error, while actual timeouts and connection failures remain distinct. No real key was accessed; fix is pending PR #10 rollout.
-- [ ] Review and authorize rollout of hourly refresh (module 0.4.0). It activates automatically for already enabled API mode, uses the existing key, and requires matching bot/dashboard code with no new storage changes.
+- [x] Reproduce the Events API apex-to-www HTTP 307 and correct the fixed endpoint. Redirects now fail once with an endpoint error, while actual timeouts and connection failures remain distinct. No real key was accessed; fix merged in PR #10 as `dbdbe93c`.
+- [x] Owner merged hourly refresh (module 0.4.0) in PR #10. Both latest Railway deployments report success and both services are Online. Independent credentialed Events acceptance remains above.
+
+## Events mention browsing
+
+- [x] Integrate merged OMOBot PR #9 (`969febf9`) for independent explicit bot-mention subscriptions without changing staff draft authorization.
+- [x] Add downstream event/events keyword matching, shared readable cache-only replies, bounded repetition limits and a dashboard usage hint.
+- [ ] Complete reviewed rollout of module 0.5.0 and verify real Discord mentions and `/events upcoming`, including channel Read Message History permission. Local synthetic Gateway and both-provider checks are recorded in docs/VERIFICATION.md.
+- [ ] Measure realistic hosted member-browsing traffic. Each accepted mention adds a cache read; process-local cooldowns limit bursts but are not a hosted request-budget guarantee.
 
 ## Module credentials
 
@@ -37,6 +44,7 @@ Updated 2026-10-11. Unchecked requirements are unfinished work. The verified fir
 
 ## Next implementation slices
 
+- [x] Add independent explicit bot-mention subscriptions with per-handler member/admin access, early interest filtering and lifecycle cleanup. Host and synthetic Gateway coverage pass; domain keyword matching belongs to downstream modules and live Discord acceptance remains outstanding.
 - [x] Add bounded persistent message snapshots for restart recovery and readable channel name/ID fallbacks for message logs. Both database providers, batched request budgets and local browser previews are verified; live Gateway/Discord acceptance remains outstanding.
 - [x] Fix activity collector settings across installed module factories. Real provider regressions reproduced applied logging with zero captured deletion/role/voice events because runtime and module had separate repositories. Collection now reads the running host's accepted settings; production-registry capture, delivery and disable tests pass on both databases. Live Discord verification remains outstanding.
 - [x] Replace raw channel snapshot dumps in Discord with compact create/delete summaries and changed-field updates. Permission overwrites use counts or readable state transitions; detailed evidence remains in the dashboard. Regression fixtures reproduce large overwrite arrays seen in production screenshots. Local verification is recorded in docs/VERIFICATION.md; live Discord rendering still needs checking after downstream deployment.

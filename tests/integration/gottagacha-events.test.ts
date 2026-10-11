@@ -160,7 +160,11 @@ describe.each(['postgres', 'pocketbase'] as const)('GottaGacha events with %s', 
       const command = { guildId: guild, userId: owner, channelId: channel, access: null, options: {} };
       expect(await host.command('events upcoming', command)).toContain('Synthetic public gathering');
       expect(await host.command('events upcoming', { ...command, guildId: 'other' })).toContain('does not have access');
-      expect(apiReader).toHaveBeenCalledOnce(); // Commands never call the API.
+      const mentionReply = vi.fn<(content: string) => Promise<void>>(async () => {});
+      await host.message({ ...command, id: 'public-events-mention', content: '<@100000000000000002> events', mentionsBot: true, reply: mentionReply });
+      expect(mentionReply).toHaveBeenCalledOnce();
+      expect(mentionReply).toHaveBeenCalledWith(await host.command('events upcoming', command));
+      expect(apiReader).toHaveBeenCalledOnce(); // Browsing never calls the API.
       const data = store.resources(moduleId).data, cached = (await data.get<LiveSnapshot>('api-snapshot'))!;
       await data.put('api-snapshot', { ...cached.value, freshUntil: Date.now() - 1 }, cached.revision);
       expect((await app.inject({ url: `${root}/api-snapshot`, ...reader })).json().data.events).toEqual([]);

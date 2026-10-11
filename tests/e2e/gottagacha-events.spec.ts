@@ -56,6 +56,7 @@ test('API browsing picks up automatic updates, lasts between hourly reads and hi
   await expect(page.getByRole('heading', { name: 'Synthetic API gathering' })).toBeVisible();
   await expect(page.getByText(`${window.startDate} at 18:30:00 (America/Detroit)`, { exact: true })).toBeVisible();
   await expect(page.getByText(/Juunni refreshes public events automatically every hour/)).toBeVisible();
+  await expect(page.getByText('@Juunnii events', { exact: true })).toBeVisible();
   await expect(page.getByText(/Last checked: May 10, 2030/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Refresh from GottaGacha' })).toBeDisabled();
   await expect(page.getByText('Publishing unavailable', { exact: true })).toBeVisible();
