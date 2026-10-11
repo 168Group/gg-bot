@@ -21,9 +21,9 @@ Updated 2026-10-11. Unchecked requirements are unfinished work. The verified fir
 
 ## Events release gates (2026-10-11)
 
-- [ ] Approve and deploy the read-only Events release after CI. It preserves deployed main's persistent message cache and introduces no further storage/hook changes.
-- [ ] Privately set the same dedicated `MODULE_SECRET_ENCRYPTION_KEY` on both Railway services. Both were absent in today's variable-name inventory.
-- [ ] Configure the confirmed `DISCORD_APPLICATION_ID` on the bot and run the existing guild-command synchronizer. The observed live service has neither that variable nor a synchronization pre-deploy step.
+- [x] Approve and deploy the read-only Events release after CI. PR #9 merged as `82a27de7`; both services are Online, dashboard readiness is HTTP 200 and command synchronization is logged. Persistent message caching is preserved, with no further storage/hook changes.
+- [x] Privately set the same dedicated `MODULE_SECRET_ENCRYPTION_KEY` on both Railway services. The new deployment includes both configured values.
+- [x] Configure the confirmed `DISCORD_APPLICATION_ID` on the bot and run the existing guild-command synchronizer. The bot uses the dashboard application-ID reference and a synchronization pre-deploy step; the new deployment logs confirm success.
 - [ ] Owner enters a read-scoped GottaGacha key in the dashboard; verify one explicit API refresh and `/events upcoming`. No credentialed API acceptance has run.
 
 ## Module credentials

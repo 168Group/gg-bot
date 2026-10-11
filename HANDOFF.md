@@ -2,7 +2,13 @@
 
 Updated 2026-10-11. This repository is **gg-bot**, GottaGacha’s downstream Discord bot powered by the reusable OMOBot framework from OMOWorlds. The mascot is **Juunni**, and the current deployment display name is **Juunnii**. The inherited framework is Apache 2.0 licensed. One deployment serves one configured guild. README is the public entry point; ROADMAP records unfinished work.
 
-## Release preparation (2026-10-11)
+## Deployed Events release (2026-10-11)
+
+The owner approved production configuration and deployment, then merged PR #9 as `82a27de7`. Both Railway services successfully deployed that exact commit and report Online with one running replica each, no recent failures and no pending rollout. Dashboard `/health/ready` returned HTTP 200. Bot pre-deploy logs confirm guild slash commands synchronized. One initial worker-lease retry was recorded; no subsequent errors appeared in the inspected deployment log. This is a short rollout check, not sustained-load or live Discord acceptance.
+
+Both services now have the dedicated matching module-secret encryption key, configured privately without exposing its value. The bot application ID references the confirmed dashboard application, its pre-deploy command synchronizes commands, and the dashboard has a readiness healthcheck. No storage/hook changes were made for this release. The Events module defaults to disabled/disconnected; owner API-key entry and a credentialed event refresh remain outstanding. Authenticated production UI inspection was unavailable because the browser connection timed out; local browser acceptance and hosted CI passed.
+
+## Release preparation record (2026-10-11)
 
 Railway reports both production services Online on gg-bot main `7e76ca88`, with one running replica each and no recent failures. The dashboard readiness endpoint returned HTTP 200. The Events release is prepared above that deployed revision, preserving persistent message snapshots and channel identification. The resulting release has no storage, hook or generic runtime changes relative to deployed main; the older migration prerequisites below describe the earlier rollout and do not imply another migration is needed now.
 
