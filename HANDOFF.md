@@ -1,6 +1,12 @@
 # Implementation handoff
 
-Updated 2026-10-06. OMOBot is a modular, self-hostable Discord bot by OMOWorlds, released under Apache 2.0. One deployment serves one configured guild. README is the public entry point; ROADMAP records unfinished work.
+Updated 2026-10-11. OMOBot is a modular, self-hostable Discord bot by OMOWorlds, released under Apache 2.0. One deployment serves one configured guild. README is the public entry point; ROADMAP records unfinished work.
+
+## Explicit bot mentions (2026-10-11)
+
+Request GG-EVENTS-20261011-05 adds `context.onBotMention({ access: 'member' | 'admin' }, handler)` independently of `onMessage`. Both require GuildMessages and MessageContent. The runtime derives optional `ModuleMessage.mentionsBot` from literal connected-bot mentions, never inferred reply mentions. Local interest and exclusions run before forced membership lookup. Ordinary unsubscribed traffic adds no module-routing Discord/storage work; logging collection remains independent. Both eligible handlers run once, channel first, with separate access checks and failure isolation.
+
+Disable, failed startup and shutdown clean up both registrations. The runtime rechecks availability after membership fetch and before no-ping, 2,000-character replies; input is bounded to 4,000 characters. Existing one-argument hasMessageInterest calls and modules without mention subscriptions remain compatible. New module consumers must update their base runtime before using this method; handwritten BotModuleContext test doubles need the new member. No new storage migrations, hook protocols, secrets or deployment are involved. Local typecheck/lint, 94 unit tests, 89 provider/integration tests, production build and bundle generation pass. Synthetic Gateway tests use the real routing helper and ModuleHost; live Discord acceptance remains outstanding.
 
 ## Persistent message cache and channel identification (2026-10-06)
 
