@@ -16,8 +16,14 @@ export interface CommandContext {
   guildId: string; userId: string; channelId: string | null; access: Access | null;
   options: Record<string, string | number | boolean>;
 }
-export interface ModuleMessage extends CommandContext { id: string; content: string; reply(text: string): Promise<void> }
+export interface ModuleMessage extends CommandContext {
+  id: string; content: string;
+  /** Trusted runtime metadata: content explicitly mentions the connected bot. */
+  mentionsBot?: boolean;
+  reply(text: string): Promise<void>;
+}
 export interface MessageSubscription { channelIds(): string[]; access: 'member' | 'admin' }
+export interface BotMentionSubscription { access: 'member' | 'admin' }
 export interface ModuleDefinition {
   manifest: ModuleManifest;
   settingsSchema: ZodType;
@@ -37,6 +43,7 @@ export interface BotModuleContext extends ModuleResources {
   onCommand(name: string, handler: (context: CommandContext) => Promise<string>): void;
   onJob(type: string, handler: (job: ModuleJob) => Promise<string>): void;
   onMessage(subscription: MessageSubscription, handler: (message: ModuleMessage) => Promise<void>): void;
+  onBotMention(subscription: BotMentionSubscription, handler: (message: ModuleMessage) => Promise<void>): void;
   /** Legacy environment-only lookup. Use secrets.get for dashboard-managed credentials. */
   secret(name: string): string;
   secrets: { get(name: string): Promise<string> };

@@ -1,6 +1,12 @@
 # Verification record
 
-Updated 2026-10-06. Pinned environment: Node 24.21.0, pnpm 10.34.5, PocketBase 0.40.4 and PostgreSQL 17.10.0. No production credentials or real Discord account were used.
+Updated 2026-10-11. Pinned environment: Node 24.21.0, pnpm 10.34.5, PocketBase 0.40.4 and PostgreSQL 17.10.0. No production credentials or real Discord account were used.
+
+## Explicit bot-mention subscriptions (2026-10-11)
+
+Baseline: typecheck, lint, 80 unit tests, 89 integration tests and production build passed on Node 24.21.0 and pnpm 10.34.5. After implementation: typecheck, lint, 94 unit tests, 89 real provider/integration tests, production build and PocketBase bundle generation pass. Initial new-test type errors (an unused import, Discord event payload narrowing and parameterized-array shape) were corrected before the suite passed.
+
+Fourteen new cases cover host registration, independent staff/member/admin access, missing intents, duplicate/failed-start cleanup, disable/re-enable/shutdown, handler failure isolation and serialized draining. Synthetic MessageCreate events exercise the production routing helper and real ModuleHost for both literal mention syntaxes, wrong identities, role/everyone and reply-only mentions, DMs, other guilds, bots/webhooks, unavailable runtime, fresh roles, failed/mismatched membership, shutdown while lookup is pending, no-ping replies and exact input/reply bounds. Uninterested traffic is checked for zero membership and host-storage calls. Existing activity collection and provider regressions remain unchanged. No live Discord connection or production deployment was performed.
 
 ## Persistent message snapshots and channel labels
 
