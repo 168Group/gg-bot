@@ -1,6 +1,16 @@
 # Verification record
 
-Updated 2026-10-01. Pinned environment: Node 24.21.0, pnpm 10.34.5, PocketBase 0.40.4 and PostgreSQL 17.10.0. No production credentials or real Discord account were used.
+Updated 2026-10-06. Pinned environment: Node 24.21.0, pnpm 10.34.5, PocketBase 0.40.4 and PostgreSQL 17.10.0. No production credentials or real Discord account were used.
+
+## Persistent message snapshots and channel labels
+
+The 2026-10-06 regressions reproduced lost deletion content after one hour, cache loss on a cosmetic settings change, and message embeds that identified a channel solely through a Discord-resolved mention. The fixes add a 5,000-message/24-hour memory and persistent cache, batched into workerPoll, plus captured channel names and explicit channel IDs.
+
+`pnpm check` passed (78 unit tests and 87 integration tests at that point), as did production/fixture builds, PocketHost bundle generation and all 18 desktop/mobile browser tests. Follow-up paging, category/thread exclusions, old-hook refusal and the 1,000-message HTTP-budget cases passed with typecheck/lint and the affected suites (74 tests), bringing the suite totals to 80 unit and 89 integration cases. Desktop edit and mobile deletion preview screenshots were visually reviewed. The new budget fixture uses the actual adapter, collector, persistent-cache manager and worker cycle with simulated HTTP responses; it confirms 1,000 ordinary messages add no per-message storage requests. This is not a hosted load test.
+
+Real PostgreSQL/PocketBase coverage includes restoration into a fresh collector, author/content preservation through edit/delete, snapshot removals, expiry, the persistent count limit, startup paging, malformed-batch rejection, policy pruning and disabled-write rejection. Unit coverage exercises retries and updates/deletions during an in-flight batch, Unicode request-size limits, restored snapshot expiry and preservation of newer live messages. PocketBase worker ownership also fences cache loads. Existing database migrations remain unchanged; the new hook and matching operations file must be installed before clients requiring messageCacheProtocol:1.
+
+Production deployment, real Gateway resume/replay and live Discord permission/rendering checks were not performed. Initialization/downtime and unflushed changes remain coverage limits; a saved snapshot may predate an unseen edit.
 
 ## Foundation results
 
@@ -137,3 +147,11 @@ Verified merged OMOBot PR #7 (`95db3e91`) and reviewed its five-file change befo
 The combined branch now passes registry synchronization, `pnpm check` with 86 unit and 88 actual PostgreSQL/PocketBase integration tests, production/fixture builds, bundle generation and all 24 desktop/mobile browser cases in one uninterrupted run. This includes 150 built-asset requests before module navigation on each viewport, the formerly failing mobile logging case, and the Events save/mask/reveal controls. The mobile asset-burst screenshot was reviewed. Page/API/auth budgets remain enforced by the real-server regression. No runtime limits were raised.
 
 This web-only patch does not change storage, hooks, environment variables or encryption keys. The previously integrated secret-vault release still requires its storage migration, matching hooks and shared dedicated bot/web key before a separately authorized rollout. No production deployment, real credentials or live event API work occurred.
+
+## Events release preparation (2026-10-11)
+
+The clean Events branch baseline passed 86 unit and 88 integration tests, typecheck/lint/build. The first shell used unsupported Node 25 after the old temporary toolchain disappeared; no source was changed during that run. The pinned Node 24.21.0/pnpm 10.34.5 toolchain was restored before final verification. Reviewed and merged gg-bot main `7e76ca88` (PR #8) on a release branch, retaining Events and the deployed persistent message cache. Only HANDOFF and request-budget documentation conflicted.
+
+The combined release passes registry synchronization, typecheck, lint, 98 unit tests, 96 PostgreSQL/PocketBase integration tests, production/fixture builds, bundle generation and all 24 combined desktop/mobile browser cases. The explicit HTTP budget run measured 326/329 idle requests and 914 active-workload requests with peak 29/10 seconds. These remain simulated workloads, not hosted capacity acceptance.
+
+Read-only deployment checks confirmed both Railway services Online on `7e76ca88`, one running replica each, no recent failures and no staged changes. The public dashboard readiness endpoint returned HTTP 200. Comparing the release against deployed main shows no database, hook or generic runtime changes. Variable-name/configuration inspection found missing module-secret encryption keys on both services, plus missing bot application ID and command-sync pre-deploy configuration. Values were not retrieved. Production configuration, API credentials, live event refresh and actual deployment remain unmodified/unverified by this release preparation.

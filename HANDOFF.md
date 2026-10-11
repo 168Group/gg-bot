@@ -1,6 +1,14 @@
 # Implementation handoff
 
-Updated 2026-10-01. This repository is **gg-bot**, GottaGacha’s downstream Discord bot powered by the reusable OMOBot framework from OMOWorlds. The mascot is **Juunni**, and the current deployment display name is **Juunnii**. The inherited framework is Apache 2.0 licensed. One deployment serves one configured guild. README is the public entry point; ROADMAP records unfinished work.
+Updated 2026-10-11. This repository is **gg-bot**, GottaGacha’s downstream Discord bot powered by the reusable OMOBot framework from OMOWorlds. The mascot is **Juunni**, and the current deployment display name is **Juunnii**. The inherited framework is Apache 2.0 licensed. One deployment serves one configured guild. README is the public entry point; ROADMAP records unfinished work.
+
+## Release preparation (2026-10-11)
+
+Railway reports both production services Online on gg-bot main `7e76ca88`, with one running replica each and no recent failures. The dashboard readiness endpoint returned HTTP 200. The Events release is prepared above that deployed revision, preserving persistent message snapshots and channel identification. The resulting release has no storage, hook or generic runtime changes relative to deployed main; the older migration prerequisites below describe the earlier rollout and do not imply another migration is needed now.
+
+The observed Railway variable-name inventory lacks `MODULE_SECRET_ENCRYPTION_KEY` on both services. Configure one dedicated shared value privately before enabling dashboard secret storage. The bot also lacks `DISCORD_APPLICATION_ID`, and the observed Railway configuration has no command-sync pre-deploy step. Use the confirmed dashboard application's ID on the bot and run the existing command synchronizer during the approved rollout. Never put either API keys or encryption values in chat or source control.
+
+Release scope is manual read-only event browsing and owner-managed encrypted API credentials, with the module initially disabled/disconnected. After deployment an owner saves an events:read key, enables the module and selects API read-only; an administrator requests a refresh. No live announcements, event creation or RSVP are included. Production configuration, main merge and deployment still need explicit approval under this project's boundary. No changes to production were made during preparation.
 
 ## GottaGacha events foundation
 
@@ -19,6 +27,14 @@ For a separately authorized rollout, apply the new module-secret migration and m
 ## Deployment observation
 
 Read-only inspection on 2026-09-30 showed Railway dashboard **Online** and bot **Crashed** on logging PR #4 (`9fc28d34193a71b11dc76de54094cd5ce2142f5a`). The bot exhausted startup retries with `503 STORAGE_PROTOCOL: PocketBase returned an invalid storage response` during initialization; last visible error was 17:33 EDT. The dashboard settings page loaded and confirmed Juunnii. This is evidence of a failed worker, not successful live logging acceptance. Bot and dashboard run on Railway; storage is PocketBase on PocketHost. The separate base task handled recovery in its own downstream worktree. Its subsequent diagnosis identifies rate limiting as the leading explanation, not a confirmed historical 429. No production changes were made by this events foundation. The base task subsequently reported recovery PR #5 merged at `df430287`, with bot and dashboard readiness returning HTTP 200. That merged update is integrated in this feature branch; these deployment checks were reported by the base task, not repeated here. Sustained health and the two-module request budget still require verification.
+
+## Persistent message cache and channel identification (2026-10-06)
+
+Message comparison now keeps up to 5,000 snapshots for 24 hours in memory and the selected database. Changed snapshots/removals travel with workerPoll, with 100-snapshot/512-KiB batch limits. Startup restores pages of 500; clean shutdown flushes pending batches. Failed writes remain retryable, and acknowledgements cannot erase a newer in-memory update. Cosmetic settings preserve eligible snapshots; exclusions and disabling message logging prune them. Resumable Gateway reconnects keep the baseline and consume replayed raw events. Crashes, downtime, expiry and count eviction still limit coverage.
+
+Message embeds capture the channel name and show the channel ID alongside the mention, so “No Access” is no longer the only channel identifier. This does not alter Discord permissions. Unavailable deleted text is explained explicitly and cannot be recovered retroactively.
+
+Both providers use their existing module-record tables. PocketBase needs updated `operations.js` plus new `message-cache.js`; clients require messageCacheProtocol:1. No new migration or key is needed. Builds, typecheck/lint, database regressions and 18 browser tests pass locally; see docs/VERIFICATION.md for counts and limits. No production rollout or live Discord acceptance was performed.
 
 ## Current implementation
 
@@ -62,6 +78,8 @@ Upstream PR #5 and downstream PR #7 are merged. The downstream merge is `4971c27
 
 ## Verified state
 
+The 2026-10-11 release merge with deployed main `7e76ca88` passes 98 unit, 96 real-provider integration and all 24 combined browser tests, registry synchronization, typecheck/lint, production/fixture builds and bundle generation on pinned Node 24.21.0. The release has no storage/hook differences from deployed main. See the release prerequisites above; no deployment or credentialed API acceptance has occurred.
+
 The reviewed asset-rate-limit merge (`95db3e9`, OMOBot PR #7) resolves the earlier combined-browser failure. The current downstream branch passes registry synchronization, typecheck, lint, 86 unit tests, 88 real-provider integration tests, production/fixture builds, bundle generation and all 24 combined desktop/mobile browser cases. Asset-burst navigation and encrypted Events secret controls pass together; mobile screenshots were reviewed. This patch adds no storage or configuration requirement, but the previously integrated secret-vault rollout prerequisites still apply. No deployment or live API calls were performed.
 
 The reviewed secret-vault merge (`7914f055`, OMOBot PR #6) plus downstream events integration passes typecheck, lint, 86 unit tests, 87 real-provider integration tests, production/fixture builds and bundle generation. Provider regressions first reproduced the old events module ignoring stored keys, then verified per-job replacement, disablement, invalid format and explicit environment fallback. All 11 desktop browser cases pass; the combined suite passed 21 of 22 because static assets hit the shared page rate limit during mobile logging navigation. A separate fresh mobile run passes all 11 cases. Secret-control screenshots were reviewed on both viewports. That historical run was not a clean combined-suite pass; the subsequent reviewed rate-limit merge and full verification above resolve it. No live API call, real credential entry or deployment was performed.
@@ -94,7 +112,7 @@ The activity-logging update passed typecheck, lint, 52 unit tests, 61 database/i
 - Enable Server Members and Message Content privileged intents in the Discord application before starting this version, even when new event switches are off. Deploy matching bot and dashboard builds. The earlier activity-collector update needed no storage changes; the current request-budget release requires updated hooks.
 - The raw Gateway collector runs before discord.js updates member/voice caches. Preserve that ordering. Member baseline fetching is bounded to 15 seconds; missing baselines record gaps instead of fabricated changes.
 - Collector policy comes from `ModuleHost.activeSettings('logging')`. Do not restore repository-local policy state: package factories can create their own repository objects. Ordinary new messages remain memory-only. Member join/leave events are not implemented; initial roles already present in a join snapshot are not fabricated as role changes.
-- Discord.js MessageManager caching is explicitly disabled. The logging collector alone holds up to 1,000 messages for 30 minutes, with 4,000 content characters and ten attachment names per snapshot. Cache state clears on applied-policy changes, disconnect and shutdown; only edits/deletions persist content under event retention. Module message subscribers still receive live message content.
+- Discord.js MessageManager caching is explicitly disabled. The logging collector holds up to 5,000 messages for 24 hours, with 4,000 content characters and ten attachment names per snapshot. A matching persistent cache batches changes into workerPoll and restores them at startup. Disabling message logging or excluding a channel removes its snapshots; cosmetic policy changes and resumable reconnects preserve them. Snapshots and edit/deletion events have separate retention periods. The persistent-cache release requires updated PocketBase hooks advertising messageCacheProtocol:1, without a new schema migration. Module message subscribers still receive live message content.
 - Message/voice subjects are not channel IDs. Exclusion checks must use channelId, category and snapshot containerId (for thread parents), both before collection and before delivery. The existing PocketBase hooks persist generic events; the delivery worker performs the additional exclusion/event-switch recheck.
 - Use the pinned Node/pnpm versions. Runtime profiles, `.env`, databases, dependencies, builds and screenshots are ignored by Git.
 - Keep migrations immutable. PocketBase uses private `omo_` SQL tables behind authenticated hooks, not public collections. Upload the complete hook/migration bundle.

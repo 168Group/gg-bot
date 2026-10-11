@@ -180,3 +180,15 @@ Skip the pocketbase service and add Railway's PostgreSQL template (service name 
 Owners can manage declared module credentials from Modules or the GottaGacha events page after this version is deployed. Prepare the shared MODULE_SECRET_ENCRYPTION_KEY privately on both services; do not reuse SESSION_ENCRYPTION_KEY or store it in PocketBase. Keep it securely with protected backups. Rotating this encryption key does not rewrap existing ciphertext.
 
 Before upgrading clients on PocketHost, apply `1790851200_module_secrets.js` and its matching `operations.js` bundle, then verify authenticated readiness includes `protocol:1`, `trafficProtocol:1` and `secretsProtocol:1`. PostgreSQL deployments use migration `0004_module_secrets.sql`. The previous request-budget hook-only procedure is insufficient. Follow [the full secret rollout guide](MODULE_SECRETS.md); this documentation is not authorization to deploy.
+
+## Events release over deployed main (2026-10-11)
+
+Production is currently running `7e76ca88` on both services. The Events release merges that revision and has no new PocketHost bundle, database or generic runtime changes relative to it. Confirm deployed readiness before rollout; do not replace its persistent-cache hooks with an older Events-branch bundle.
+
+For the explicitly approved rollout:
+
+1. Privately configure a single dedicated `MODULE_SECRET_ENCRYPTION_KEY` on both services. Both names were absent in the inspected Railway configuration. Keep a protected copy; do not reuse the session key.
+2. Copy the already confirmed application's ID into the bot's `DISCORD_APPLICATION_ID` and configure `node dist/sync-commands.js` as its pre-deploy command, or execute the existing synchronizer once with the bot service's environment. Do not print or copy the bot token into chat. The observed service was missing both the ID variable and the pre-deploy step.
+3. Require passing CI before merging the Events release. Both services follow main and can deploy automatically, so the main merge is a production action. Deploy matching revisions and retain a single bot worker. Verify readiness and command synchronization.
+4. As owner, save an events:read key through Events → API key → Manage secrets. Enable the module, choose API read-only, save, then explicitly refresh. Confirm the returned public events in the dashboard and `/events upcoming`. The feature does not auto-poll, announce or publish events.
+5. If acceptance fails, disable the Events module and restore the previous application revision if needed. No database rollback is required for this module-only release; preserve logging settings and stored credentials.
