@@ -20,7 +20,7 @@ The parser requires labeled lines, an explicit timezone and matching offset. It 
 
 ## Documented API read-only browsing
 
-The supplied events integration guide establishes `https://gottagacha.com/api/v1/events` as the authenticated GET endpoint. Public reference: [API docs](https://gottagacha.com/api/docs). The guide includes privacy fields missing from the public OpenAPI Event schema; this adapter requires explicit `isPrivate` and `isActive` booleans and fails closed when they are missing.
+The supplied events integration guide establishes `/api/v1/events` as the authenticated GET endpoint. The client uses `https://www.gottagacha.com/api/v1/events`: a credential-free check on 2026-10-11 confirmed the documented apex hostname returns HTTP 307 to this canonical hostname. Calling it directly avoids forwarding credentials through redirects. Any further redirect is rejected once with an endpoint error, without exposing the Location header or response body. Public reference: [API docs](https://www.gottagacha.com/api/docs). The guide includes privacy fields missing from the public OpenAPI Event schema; this adapter requires explicit `isPrivate` and `isActive` booleans and fails closed when they are missing.
 
 For a separately authorized rollout, issue a least-privilege key with only `events:read`. An owner can save it through **Manage secrets** on this module’s page or Modules card, using the declared `GG_API_KEY` field. Alternatively, keep `OMO_MODULE_GOTTAGACHA_EVENTS_GG_API_KEY` privately on the bot service as an explicit environment fallback. Do not put values in chat, ordinary settings, jobs or records. Both `gg_test_` and `gg_live_` keys access the same database; the test prefix does not provide a sandbox. Fixture mode requires no key.
 

@@ -79,7 +79,7 @@ async function workload(moduleCount: number, changes: number, dashboard: boolean
   const records = new Map<string, ModuleRecord>(), jobs = new Map<string, JobRecord & { due: number }>();
   let apiReads = 0;
   vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
-    if (String(_url).startsWith('https://gottagacha.com/api/v1/events?')) {
+    if (String(_url).startsWith('https://www.gottagacha.com/api/v1/events?')) {
       apiReads++; return new Response(JSON.stringify({ data: [], meta: { total: 0 } }));
     }
     const name = _url.split('/').pop() as keyof Operations;

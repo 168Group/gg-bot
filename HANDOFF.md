@@ -2,6 +2,12 @@
 
 Updated 2026-10-11. This repository is **gg-bot**, GottaGacha’s downstream Discord bot powered by the reusable OMOBot framework from OMOWorlds. The mascot is **Juunni**, and the current deployment display name is **Juunnii**. The inherited framework is Apache 2.0 licensed. One deployment serves one configured guild. README is the public entry point; ROADMAP records unfinished work.
 
+## Events API redirect fix (2026-10-11, pending rollout)
+
+The owner reported failed reads with a fresh wildcard-scoped key and a deadline message. A credential-free probe reproduced an HTTP 307 from the guide's apex API hostname to `www.gottagacha.com`; the old client's `redirect: error` converted that immediate rejection into a network/deadline error and retried it three times. The canonical endpoint returned HTTP 401 promptly without credentials. The client now calls the verified canonical HTTPS endpoint directly, rejects any further redirect without following it, and distinguishes an actual aborted deadline from other connection failures. No owner key was read, revealed or replaced. The fix is included with the hourly-refresh update in PR #10.
+
+Both Railway services reported Online with no pending work during this diagnosis, still on the prior release. Local HTTP regressions reproduce the misleading error and verify the fix; credentialed production acceptance remains outstanding until the reviewed update is deployed. Wildcard permissions are not required for the documented read-only feature.
+
 ## Hourly Events refresh (2026-10-11, pending rollout)
 
 The owner reports completing API-key entry and setup, then requested hourly automatic refresh. Module version 0.4.0 now schedules revision-scoped, idempotent jobs for the current/next hour while enabled in API read-only mode. A tracked timer replenishes the queue and stops on disable/source changes/shutdown. Restarts resume without duplicating the current hour. Manual refresh remains available; credentials are resolved privately by each job. No generic framework, settings migration or storage/hook changes are required.

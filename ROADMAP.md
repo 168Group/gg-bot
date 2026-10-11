@@ -26,6 +26,7 @@ Updated 2026-10-11. Unchecked requirements are unfinished work. The verified fir
 - [x] Configure the confirmed `DISCORD_APPLICATION_ID` on the bot and run the existing guild-command synchronizer. The bot uses the dashboard application-ID reference and a synchronization pre-deploy step; the new deployment logs confirm success.
 - [x] Owner reports adding the API key and completing Events setup.
 - [ ] Independently verify a credentialed API refresh and `/events upcoming`; local tests use synthetic responses.
+- [x] Reproduce the Events API apex-to-www HTTP 307 and correct the fixed endpoint. Redirects now fail once with an endpoint error, while actual timeouts and connection failures remain distinct. No real key was accessed; fix is pending PR #10 rollout.
 - [ ] Review and authorize rollout of hourly refresh (module 0.4.0). It activates automatically for already enabled API mode, uses the existing key, and requires matching bot/dashboard code with no new storage changes.
 
 ## Module credentials
