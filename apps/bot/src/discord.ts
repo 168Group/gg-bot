@@ -27,7 +27,8 @@ export function channelData(channel: GuildChannel): Record<string, unknown> {
   const overwrites = [...channel.permissionOverwrites.cache.values()].sort((a, b) => a.id.localeCompare(b.id)).map(overwrite => ({
     id: overwrite.id, type: overwrite.type, allow: overwrite.allow.toArray().sort(), deny: overwrite.deny.toArray().sort()
   }));
-  return { name: channel.name, type: ChannelType[channel.type], parentId: channel.parentId, position: channel.rawPosition,
+  // Ticket creation/deletion can renumber many channels; numeric position is not a logged change.
+  return { name: channel.name, type: ChannelType[channel.type], parentId: channel.parentId,
     ...('topic' in channel ? { topic: channel.topic } : {}), ...('nsfw' in channel ? { nsfw: channel.nsfw } : {}),
     ...('rateLimitPerUser' in channel ? { slowmode: channel.rateLimitPerUser } : {}), overwrites };
 }
