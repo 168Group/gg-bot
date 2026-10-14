@@ -85,6 +85,7 @@ export async function startBot(config: Config, token: string) {
   };
   const observe = (type: string, channel: GuildChannel, before: Record<string, unknown> | null, after: Record<string, unknown> | null) => {
     if (stopped || !ready || channel.guild.id !== store.guildId) return;
+    if (type === 'channel.updated' && JSON.stringify(before) === JSON.stringify(after)) return;
     void host.dispatch({ guildId: store.guildId, sourceKey: `${generation}:${++sequence}`, type, subjectId: channel.id, channelId: channel.id,
       parentId: channel.parentId, label: channel.name, observedAt: new Date().toISOString(), before, after }).catch(() => { dropped++; });
   };
