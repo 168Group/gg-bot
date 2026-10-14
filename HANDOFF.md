@@ -1,6 +1,14 @@
 # Implementation handoff
 
-Updated 2026-10-11. This repository is **gg-bot**, GottaGacha’s downstream Discord bot powered by the reusable OMOBot framework from OMOWorlds. The mascot is **Juunni**, and the current deployment display name is **Juunnii**. The inherited framework is Apache 2.0 licensed. One deployment serves one configured guild. README is the public entry point; ROADMAP records unfinished work.
+Updated 2026-10-13. This repository is **gg-bot**, GottaGacha’s downstream Discord bot powered by the reusable OMOBot framework from OMOWorlds. The mascot is **Juunni**, and the current deployment display name is **Juunnii**. The inherited framework is Apache 2.0 licensed. One deployment serves one configured guild. README is the public entry point; ROADMAP records unfinished work.
+
+## Channel position logging (2026-10-13)
+
+Merged OMOBot main `77c9caa` to suppress numeric channel-position changes caused by ticket creation, deletion and reordering. Channel snapshots omit numeric position, and unchanged updates are filtered before module dispatch. Renames, category moves, topics, permissions and other captured settings still produce logs. Existing stored events and Discord posts remain unchanged. No storage migration, hook update or settings change is required.
+
+The downstream baseline passed typecheck, lint and 129 unit tests before the merge. The upstream change passed typecheck, lint, 103 unit tests, 89 integration tests and its production build. Regression coverage simulates 100 position shifts and preserves eight meaningful update types. Live Discord ticket activity remains an acceptance check after deployment.
+
+A pre-update Railway inspection found the bot crashed after losing its worker lease and exhausting retries while PocketBase was unreachable; the dashboard was Online. This predates the logging fix and does not establish that position spam caused the outage. Verify the new deployment's health separately.
 
 ## Friendly Events browsing (2026-10-11, pending review and rollout)
 
