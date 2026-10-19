@@ -27,8 +27,9 @@ it.each([null, [], 123, 'private text', {}])('rejects malformed JSON envelopes s
   await expect(adapter().call('guild', 'ready', {})).rejects.toMatchObject({ code: 'STORAGE_PROTOCOL' });
 });
 
-it('still relinquishes worker ownership immediately when a renewal is rate limited', async () => {
+it('keeps a rate-limited lease only until its confirmed deadline, without extra requests', async () => {
   vi.useFakeTimers();
+  vi.spyOn(console, 'warn').mockImplementation(() => {}); vi.spyOn(console, 'error').mockImplementation(() => {});
   const fetch = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ data: true })))
     .mockResolvedValue(new Response('Too many requests', { status: 429, headers: { 'Retry-After': '3600' } }));
   vi.stubGlobal('fetch', fetch);
@@ -36,25 +37,34 @@ it('still relinquishes worker ownership immediately when a renewal is rate limit
   const db = adapter();
   const release = await db.singleton('guild', lost);
   await vi.advanceTimersByTimeAsync(20000);
-  expect(lost).toHaveBeenCalledTimes(1);
+  expect(lost).not.toHaveBeenCalled();
+  // Acquired at 0s: the server lease runs to 60s, so the worker stops at 60s minus the 10-second margin.
+  await vi.advanceTimersByTimeAsync(30000);
+  expect(lost).toHaveBeenCalledExactlyOnceWith({ reason: 'expired', lastFailure: 'rate_limited', attempts: 1 });
   await expect(release()).rejects.toMatchObject({ code: 'STORAGE_RATE_LIMIT' });
   expect(fetch).toHaveBeenCalledTimes(2);
+  vi.restoreAllMocks();
 });
 
 it('fails closed if a successful renewal arrives after the local ownership deadline', async () => {
   vi.useFakeTimers();
+  vi.spyOn(console, 'warn').mockImplementation(() => {}); vi.spyOn(console, 'error').mockImplementation(() => {});
   let renewal: ((response: Response) => void) | undefined;
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ data: true })))
+  const fetch = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ data: true })))
     .mockImplementationOnce(() => new Promise<Response>(resolve => { renewal = resolve; }))
-    .mockResolvedValue(new Response(JSON.stringify({ data: null }))));
+    .mockImplementation(() => new Promise<Response>(() => {}));
+  vi.stubGlobal('fetch', fetch);
   const db = adapter(), lost = vi.fn(), release = await db.singleton('guild', lost);
   await vi.advanceTimersByTimeAsync(20000);
   expect(renewal).toBeDefined();
-  await vi.advanceTimersByTimeAsync(26000);
+  await vi.advanceTimersByTimeAsync(30000);
+  expect(lost).toHaveBeenCalledOnce();
   renewal!(new Response(JSON.stringify({ data: true })));
   await vi.advanceTimersByTimeAsync(0);
   expect(lost).toHaveBeenCalledOnce();
+  fetch.mockResolvedValue(new Response(JSON.stringify({ data: null })));
   await release();
+  vi.restoreAllMocks();
 });
 
 it('requires upgraded hooks instead of silently returning to the old polling budget', async () => {

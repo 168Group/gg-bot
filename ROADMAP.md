@@ -19,6 +19,14 @@ Updated 2026-10-13. Unchecked requirements are unfinished work. The verified fir
 - The demo restart/lease issue below was reproduced again during the 2026-09-29 channel-formatting preview rerun. A successful full browser suite followed by an immediate second run failed before tests with the same worker-lock error and left a PocketBase test child on port 8092. This remains separate from the logging renderer fix.
 - [ ] Harden demo shutdown/restart after a terminal process-group interruption. During the theme review, two restarts of `.local/demo-pocketbase` failed at `scripts/demo.ts:21` with `Another bot worker already holds this guild lock.` after the previous demo was stopped. Process inspection found no remaining demo/PocketBase process. An isolated `.local/theme-preview` database started normally. The module verification also reproduced a startup failure leaving an orphaned PocketBase child on port 8092; stopping that confirmed test child and allowing lease expiry restored startup. Reproduce signal ordering, failed-start cleanup and lease expiry before changing the ownership logic; do not bypass the worker lock.
 
+## Worker lease resilience (2026-10-19)
+
+- [ ] Review and merge the lease renewal resilience branch, then deploy with owner approval. Watch for `storage.lease.*` log lines and confirm one bot replica.
+- [ ] Identify the transport failure behind the 2026-10-19 renewal loss from the new `causeCode`/`timeout` diagnostics on the next occurrence. The old logs cannot distinguish them.
+- [ ] Confirm the production Railway restart policy and whether its retry counter resets after healthy runs. The manifest says 10; production was observed at 5.
+- [ ] Offer the same change to OMOBot so the next upstream merge does not conflict.
+- [ ] Consider returning the server-side lease expiry from `leaseRenew` so the client does not depend on a matching TTL constant. This needs a hook bundle rollout.
+
 ## Events release gates (2026-10-11)
 
 - [x] Approve and deploy the read-only Events release after CI. PR #9 merged as `82a27de7`; both services are Online, dashboard readiness is HTTP 200 and command synchronization is logged. Persistent message caching is preserved, with no further storage/hook changes.
