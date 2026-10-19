@@ -70,10 +70,15 @@ export interface Operations {
   leaseRenew: Op<{ owner: string }, boolean>;
   leaseRelease: Op<{ owner: string }, null>;
 }
+/** Why a renewal attempt failed or ownership ended. Transient kinds are retried only inside the confirmed lease window. */
+export type LeaseFailureKind = 'timeout' | 'network' | 'rate_limited' | 'server' | 'protocol' | 'rejected' | 'not_owner' | 'expired';
+export interface LeaseLoss { reason: LeaseFailureKind; lastFailure?: LeaseFailureKind; attempts: number }
+export interface LeaseStatus { state: 'held' | 'retrying' | 'lost'; validForMs: number; failure?: LeaseFailureKind }
 export interface StorageDriver {
   readonly kind: 'postgres' | 'pocketbase';
   call<K extends keyof Operations>(guildId: string, operation: K, input: Operations[K]['input']): Promise<Operations[K]['output']>;
   scope(guildId: string): import('./index.js').GuildStore;
-  singleton(guildId: string, lost: () => void): Promise<() => Promise<void>>;
+  /** Holds single-worker ownership. `lost` runs once when ownership ends without release; protected work must stop. */
+  singleton(guildId: string, lost: (loss?: LeaseLoss) => void, onStatus?: (status: LeaseStatus) => void): Promise<() => Promise<void>>;
   close(): Promise<void>;
 }

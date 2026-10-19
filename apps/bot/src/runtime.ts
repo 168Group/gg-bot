@@ -5,6 +5,8 @@ import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { Client, Events, MessageFlags, Options, PermissionFlagsBits, type GuildChannel } from 'discord.js';
 import { openStorage } from '../../../packages/db/src/factory.js';
+import { StorageRequestError, transientStorageFailure } from '../../../packages/db/src/pocketbase.js';
+import type { LeaseLoss, LeaseStatus } from '../../../packages/db/src/contracts.js';
 import type { Config } from '../../../packages/core/src/config.js';
 import { accessFor, HttpError } from '../../../packages/core/src/access.js';
 import { ModuleHost } from '../../../packages/core/src/host.js';
@@ -17,7 +19,7 @@ import { PersistentMessageCache } from '../../../modules/logging/bot/message-cac
 import type { LoggingSettings } from '../../../modules/logging/shared/settings.js';
 import { dispatchModuleMessage } from './module-messages.js';
 
-export async function startBot(config: Config, token: string, startupWaitMs = 120000) {
+export async function startBot(config: Config, token: string, startupWaitMs = 900000) {
   const db = openStorage(config), store = db.scope(config.DISCORD_GUILD_ID);
   // PocketHost applies hourly per-IP caps even to paid instances. Keep idle polling modest.
   const pocketHost = config.STORAGE_PROVIDER === 'pocketbase' && new URL(config.POCKETBASE_URL!).hostname.endsWith('.pockethost.io');
@@ -29,16 +31,18 @@ export async function startBot(config: Config, token: string, startupWaitMs = 12
   const modules = botRegistry(repository, transport.validate, config.NODE_ENV === 'production');
   // Storage can be briefly away at startup (a host restart, a hibernated instance) and a redeploy overlaps the
   // previous worker whose lease lingers until it expires. Wait for both instead of crashing, so the host does not
-  // exhaust its restart budget before the condition clears.
+  // exhaust its restart budget before the condition clears. Waiting holds no ownership and runs no protected work.
   const deadline = Date.now() + startupWaitMs;
-  const transient = (error: unknown) => error instanceof HttpError ? error.statusCode === 503 : error instanceof Error && error.message.includes('already holds this guild lock');
+  const transient = (error: unknown) => error instanceof StorageRequestError ? transientStorageFailure(error)
+    : error instanceof HttpError ? error.statusCode === 503 : error instanceof Error && error.message.includes('already holds this guild lock');
   const untilReady = async <T>(what: string, attempt: () => Promise<T>): Promise<T> => {
-    for (;;) {
+    for (let failures = 0; ; failures++) {
       try { return await attempt(); }
       catch (error) {
         if (Date.now() >= deadline || !transient(error)) throw error;
-        console.info(`${what}. Retrying in 5 seconds.`);
-        await new Promise(resolve => setTimeout(resolve, 5000));
+        const delay = Math.min(60000, 5000 * 2 ** Math.min(failures, 4));
+        console.info(`${what}. Retrying in ${delay / 1000} seconds.`, error instanceof StorageRequestError ? JSON.stringify(error.failure) : '');
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
   };
@@ -47,6 +51,7 @@ export async function startBot(config: Config, token: string, startupWaitMs = 12
   let lastStorageSuccess = 0;
   let reportedFailures = 0;
   let missingMemberBaselines = 0;
+  let lease: LeaseStatus['state'] = 'held';
   let activeTick: Promise<void> = Promise.resolve();
   const generation = randomUUID();
   const host = new ModuleHost(store.guildId, modules, store, { info: console.info, error: console.error }, async module => {
@@ -80,17 +85,17 @@ export async function startBot(config: Config, token: string, startupWaitMs = 12
     try { activity.handle(packet, `${generation}:gateway:${packet.s ?? ++sequence}`); }
     catch { dropped++; }
   });
-  const lost = () => {
-    ready = false; activity.clear(); client.destroy(); stopped = true; health.close(); process.exitCode = 1;
-    console.error('Worker ownership lost. Shutting down the bot.');
+  const lost = (loss?: LeaseLoss) => {
+    ready = false; lease = 'lost'; activity.clear(); client.destroy(); stopped = true; health.close(); process.exitCode = 1;
+    console.error(`Worker ownership lost (${loss?.reason ?? 'unknown'}). Shutting down the bot.`);
     void (async () => {
       await activeTick.catch(() => {}); await host.stop();
       try { await release(); } finally { await db.close(); }
     })().catch(() => { console.error('Storage unavailable during worker shutdown.'); });
   };
-  const release = await untilReady('Another worker holds the guild lease or storage is not ready yet', () => db.singleton(store.guildId, lost));
+  const release = await untilReady('Another worker holds the guild lease or storage is not ready yet', () => db.singleton(store.guildId, lost, status => { lease = status.state; }));
   const health = createServer((request, response) => {
-    const ok = request.url === '/health/live' || (ready && Date.now() - lastStorageSuccess < Math.max(30000, pollMs * 3));
+    const ok = request.url === '/health/live' || (ready && lease === 'held' && Date.now() - lastStorageSuccess < Math.max(30000, pollMs * 3));
     response.writeHead(ok ? 200 : 503, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ ok }));
   });
   health.listen(config.BOT_HEALTH_PORT, process.env.BOT_HEALTH_HOST ?? '127.0.0.1');

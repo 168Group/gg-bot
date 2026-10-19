@@ -500,6 +500,31 @@ describe.each(['postgres', 'pocketbase'] as const)('%s storage contract', provid
         await expect(second.scope(guild).call('workerVerify', {})).resolves.toBeNull();
       } finally { await releaseSecond(); await second.close(); }
     });
+    it('renews through real hooks, rides out a dropped renewal and stops promptly when another owner takes over', async () => {
+      await release!(); release = undefined;
+      const quiet = () => {}, realFetch = globalThis.fetch;
+      const fast = new PocketBaseAdapter(pb!.url, pb!.key, 10000, { log: quiet, lease: { renewEveryMs: 150, minAttemptMs: 50, backoffMs: [50] } });
+      const states: string[] = [], losses: unknown[] = [];
+      let drop = 1;
+      // One renewal fails at the transport before reaching PocketBase; every other request is real.
+      globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+        if (String(url).endsWith('/leaseRenew') && drop > 0) { drop--; throw new TypeError('fetch failed'); }
+        return realFetch(url, init);
+      }) as typeof fetch;
+      try {
+        const releaseFast = await fast.singleton(guild, loss => losses.push(loss), status => states.push(status.state));
+        await new Promise(resolve => setTimeout(resolve, 700));
+        expect(states.slice(0, 3)).toEqual(['held', 'retrying', 'held']);
+        expect(losses).toEqual([]);
+        await expect(new PocketBaseAdapter(pb!.url, pb!.key).singleton(guild, quiet)).rejects.toThrow('already holds');
+        await mutateForTest('', "UPDATE omo_lease SET owner='competing-worker'");
+        await new Promise(resolve => setTimeout(resolve, 400));
+        expect(losses).toEqual([expect.objectContaining({ reason: 'not_owner' })]);
+        expect(states.at(-1)).toBe('lost');
+        await releaseFast(); // deletes only its own row
+        await expect(new PocketBaseAdapter(pb!.url, pb!.key).singleton(guild, quiet)).rejects.toThrow('already holds');
+      } finally { globalThis.fetch = realFetch; await fast.close(); }
+    });
     it('rejects wrong storage keys, other guilds, unknown operations and ownerless worker writes', async () => {
       await expect(new PocketBaseAdapter(pb!.url, '0'.repeat(64)).scope(guild).ready()).rejects.toThrow('storage access failed');
       await expect(driver.scope('200000000000000001').ready()).rejects.toMatchObject({ statusCode: 403 });

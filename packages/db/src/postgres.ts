@@ -6,6 +6,7 @@ import { moduleConfig } from './schema.js';
 import type { ModuleDefinition } from '../../module-sdk/src/server.js';
 import type { ModuleState, CatalogChannel } from '../../module-sdk/src/browser.js';
 import { HttpError } from '../../core/src/access.js';
+import type { LeaseLoss } from './contracts.js';
 
 export class PostgresDatabase {
   readonly pool: Pool;
@@ -26,14 +27,16 @@ export class PostgresDatabase {
   }
 
   async close() { await this.pool.end(); }
-  async singleton(guildId: string, lost: () => void): Promise<() => Promise<void>> {
+  async singleton(guildId: string, lost: (loss?: LeaseLoss) => void): Promise<() => Promise<void>> {
     const client = await this.pool.connect();
-    client.once('error', lost);
+    // A dropped session ends the advisory lock; PostgreSQL has no renewal to retry.
+    const onError = () => lost({ reason: 'network', attempts: 0 });
+    client.once('error', onError);
     const result = await client.query<{ acquired: boolean }>('SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS acquired', [`bot:${guildId}`]);
     if (!result.rows[0]?.acquired) { client.release(); throw new Error('Another bot worker already holds this guild lock.'); }
     return async () => {
       try { await client.query('SELECT pg_advisory_unlock(hashtextextended($1, 0))', [`bot:${guildId}`]); }
-      finally { client.removeListener('error', lost); client.release(); }
+      finally { client.removeListener('error', onError); client.release(); }
     };
   }
 }
